@@ -78,24 +78,27 @@
 
   /* ── Header ── */
   .header {
-    position: sticky;
+    position: fixed;
     top: 0;
+    left: 0;
+    right: 0;
     z-index: 100;
-    background-color: var(--bg);
+    background: var(--bg);
     border-bottom: 1px solid var(--border);
-    padding: 12px 0 8px;
-    margin: 0 -24px 4px;
-    padding-left: 24px;
-    padding-right: 24px;
+  }
+  .header-inner {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 12px 24px 8px;
   }
   @media (min-width: 768px) {
-    .header { margin: 0 -32px 4px; padding-left: 32px; padding-right: 32px; }
+    .header-inner { padding: 12px 32px 8px; }
   }
   @media (min-width: 1100px) {
-    .header { margin: 0 -48px 4px; padding-left: 48px; padding-right: 48px; }
+    .header-inner { padding: 12px 48px 8px; }
   }
   @media (max-width: 480px) {
-    .header { margin: 0 -12px 4px; padding-left: 12px; padding-right: 12px; }
+    .header-inner { padding: 10px 12px 6px; }
   }
   .header-top {
     display: flex;
@@ -738,8 +741,8 @@
 </head>
 <body>
 
-<div class="app">
-  <div class="header">
+<div class="header" id="appHeader">
+  <div class="header-inner">
     <div class="header-top">
       <div class="logo">
         <span class="lock">🔒</span> FocusRed <span style="font-size:11px;color:var(--text-faint);font-weight:400">v1.0</span>
@@ -748,6 +751,8 @@
     </div>
     <div class="pill-nav" id="pillNav"></div>
   </div>
+</div>
+<div class="app" id="appContent">
   <div class="refresh-banner" id="refreshBanner">Refreshing…</div>
   <div id="content"></div>
 </div>
@@ -1335,10 +1340,29 @@ function formatRedditText(text) {
   return s;
 }
 
+// ── Adjust content offset for fixed header ──
+function adjustContentOffset() {
+  const header = document.getElementById('appHeader');
+  const content = document.getElementById('appContent');
+  if (header && content) {
+    content.style.paddingTop = header.offsetHeight + 8 + 'px';
+  }
+}
+
+// Re-measure on resize and after pill changes
+const origRenderPills = renderPills;
+renderPills = function() {
+  origRenderPills();
+  requestAnimationFrame(adjustContentOffset);
+};
+
+window.addEventListener('resize', adjustContentOffset);
+
 // ── Init ──
 loadSubs();
 renderPills();
 fetchPosts();
+adjustContentOffset();
 </script>
 </body>
 </html>
