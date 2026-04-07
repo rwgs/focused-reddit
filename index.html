@@ -128,15 +128,11 @@
   /* ── Pill Nav ── */
   .pill-nav {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
-    overflow-x: auto;
-    scrollbar-width: none;
     padding-bottom: 2px;
-    -ms-overflow-style: none;
   }
-  .pill-nav::-webkit-scrollbar { display: none; }
   .pill {
-    flex-shrink: 0;
     font-family: var(--font);
     font-size: 13px;
     font-weight: 500;
@@ -1069,8 +1065,10 @@ function closeEdit() {
 }
 function renderEditList() {
   const el = document.getElementById('subListEdit');
-  el.innerHTML = subs.map((s,i) =>
-    `<div class="sub-edit-row"><span>r/${esc(s)}</span><button class="remove-btn" onclick="removeSub(${i})">×</button></div>`
+  // Display alphabetically, but use original index for removal
+  const sorted = subs.map((s, i) => ({ name: s, idx: i })).sort((a, b) => a.name.toLowerCase().localeCompare(b.name.toLowerCase()));
+  el.innerHTML = sorted.map(s =>
+    `<div class="sub-edit-row"><span>r/${esc(s.name)}</span><button class="remove-btn" onclick="removeSub(${s.idx})">×</button></div>`
   ).join('');
 }
 function addSub() {
