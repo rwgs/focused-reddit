@@ -1,0 +1,1221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Focused">
+<link rel="apple-touch-icon" href="icons/icon-192x192.png">
+<link rel="manifest" href="manifest.json">
+<title>Focused Reddit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --surface-hover: #1c2230;
+    --border: #21262d;
+    --border-accent: #30363d;
+    --text: #e6edf3;
+    --text-dim: #8b949e;
+    --text-faint: #484f58;
+    --accent: #58a6ff;
+    --accent-dim: #1f6feb33;
+    --upvote: #f78166;
+    --comment: #7ee787;
+    --pill-bg: #21262d;
+    --danger: #f85149;
+    --radius: 12px;
+    --font: 'DM Sans', sans-serif;
+    --mono: 'JetBrains Mono', monospace;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    min-height: 100dvh;
+    -webkit-font-smoothing: antialiased;
+    -webkit-tap-highlight-color: transparent;
+    overscroll-behavior-y: contain;
+  }
+
+  .app {
+    max-width: 1200px;
+    margin: 0 auto;
+    padding: 0 24px 80px;
+  }
+
+  /* Two-column grid on wide screens */
+  .posts-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  @media (min-width: 768px) {
+    .app { padding: 0 32px 80px; }
+    .posts-grid { grid-template-columns: 1fr 1fr; gap: 14px; }
+    .post-card { margin-top: 0; }
+  }
+
+  @media (min-width: 1100px) {
+    .app { padding: 0 48px 80px; }
+    .posts-grid { grid-template-columns: 1fr 1fr 1fr; gap: 16px; }
+  }
+
+  @media (max-width: 480px) {
+    .app { padding: 0 12px 80px; }
+    .post-title { font-size: 14px; }
+    .post-meta { font-size: 11px; }
+  }
+
+  /* ── Header ── */
+  .header {
+    position: sticky;
+    top: 0;
+    z-index: 100;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 0 12px;
+    margin-bottom: 4px;
+  }
+  .header-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 14px;
+  }
+  .logo {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: -0.5px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .logo .lock {
+    width: 22px;
+    height: 22px;
+    border: 2px solid var(--accent);
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 11px;
+  }
+  .edit-btn {
+    font-family: var(--font);
+    font-size: 13px;
+    color: var(--text-dim);
+    background: var(--pill-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 6px 12px;
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .edit-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+  /* ── Pill Nav ── */
+  .pill-nav {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding-bottom: 2px;
+    -ms-overflow-style: none;
+  }
+  .pill-nav::-webkit-scrollbar { display: none; }
+  .pill {
+    flex-shrink: 0;
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 500;
+    padding: 7px 14px;
+    border-radius: 20px;
+    border: 1px solid var(--border);
+    background: transparent;
+    color: var(--text-dim);
+    cursor: pointer;
+    transition: all 0.15s;
+    white-space: nowrap;
+    -webkit-user-select: none;
+    user-select: none;
+  }
+  .pill:hover { border-color: var(--text-faint); color: var(--text); }
+  .pill:active { transform: scale(0.96); }
+  .pill.active {
+    background: var(--accent);
+    border-color: var(--accent);
+    color: #0d1117;
+    font-weight: 700;
+  }
+  .pill.all-pill { font-weight: 700; letter-spacing: 0.3px; }
+
+  /* ── Post Card ── */
+  .post-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 16px;
+    transition: border-color 0.15s;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+  }
+  .post-card:active { background: var(--surface-hover); }
+  .post-meta {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 8px;
+    flex-wrap: wrap;
+  }
+  .post-sub {
+    font-weight: 700;
+    color: var(--accent);
+    font-size: 12px;
+  }
+  .post-title {
+    font-size: 15px;
+    font-weight: 500;
+    line-height: 1.45;
+    color: var(--text);
+    margin-bottom: 10px;
+  }
+  .post-title.nsfw { color: var(--danger); }
+  .post-thumb {
+    width: 100%;
+    max-height: 400px;
+    object-fit: cover;
+    border-radius: 8px;
+    margin-bottom: 10px;
+    background: var(--pill-bg);
+  }
+  .post-footer {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-size: 12px;
+    font-weight: 500;
+    margin-top: auto;
+    padding-top: 6px;
+  }
+  .stat {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    color: var(--text-dim);
+  }
+  .stat .icon { font-size: 14px; }
+  .stat.up .icon { color: var(--upvote); }
+  .stat.cmt .icon { color: var(--comment); }
+  .post-link-domain {
+    margin-left: auto;
+    font-size: 11px;
+    color: var(--text-faint);
+    font-family: var(--mono);
+  }
+  .selftext {
+    font-size: 13px;
+    line-height: 1.55;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    max-height: 120px;
+    overflow: hidden;
+    position: relative;
+  }
+  .selftext::after {
+    content: '';
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    height: 40px;
+    background: linear-gradient(transparent, var(--surface));
+  }
+
+  /* ── States ── */
+  .loading {
+    text-align: center;
+    padding: 60px 20px;
+    color: var(--text-dim);
+    font-size: 14px;
+  }
+  .spinner {
+    width: 28px; height: 28px;
+    border: 3px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    margin: 0 auto 14px;
+    animation: spin 0.7s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .error-box {
+    text-align: center;
+    padding: 40px 20px;
+    color: var(--danger);
+    font-size: 14px;
+  }
+  .error-box button {
+    margin-top: 12px;
+    padding: 8px 20px;
+    background: var(--danger);
+    color: white;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-family: var(--font);
+    font-weight: 600;
+  }
+
+  .load-more {
+    display: block;
+    width: 100%;
+    padding: 14px;
+    margin-top: 12px;
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    background: var(--accent-dim);
+    border: 1px solid var(--accent);
+    border-radius: var(--radius);
+    cursor: pointer;
+    transition: all 0.15s;
+  }
+  .load-more:active { background: var(--accent); color: var(--bg); }
+
+  .empty-state {
+    text-align: center;
+    padding: 80px 20px;
+    color: var(--text-dim);
+  }
+  .empty-state .big { font-size: 48px; margin-bottom: 16px; }
+
+  /* ── Post Detail Panel ── */
+  .detail-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.6);
+    z-index: 150;
+    animation: fadeIn 0.15s;
+  }
+  .detail-overlay.hidden { display: none; }
+  .detail-panel.hidden { display: none; }
+  .detail-panel {
+    position: fixed;
+    top: 0; right: 0; bottom: 0;
+    width: 100%;
+    max-width: 700px;
+    background: var(--bg);
+    z-index: 151;
+    overflow-y: auto;
+    animation: slideIn 0.2s ease-out;
+    border-left: 1px solid var(--border);
+  }
+  @keyframes slideIn { from { transform: translateX(100%); } to { transform: translateX(0); } }
+  @media (max-width: 768px) {
+    .detail-panel { max-width: 100%; }
+  }
+  .detail-header {
+    position: sticky;
+    top: 0;
+    z-index: 10;
+    background: var(--bg);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .detail-back {
+    font-family: var(--font);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 4px 0;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .detail-back:hover { text-decoration: underline; }
+  .detail-open-reddit {
+    margin-left: auto;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--text-faint);
+    text-decoration: none;
+    padding: 5px 10px;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+  }
+  .detail-open-reddit:hover { border-color: var(--accent); color: var(--accent); }
+  .detail-body {
+    padding: 20px 16px;
+  }
+  .detail-sub {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .detail-author {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 12px;
+  }
+  .detail-title {
+    font-size: 20px;
+    font-weight: 700;
+    line-height: 1.35;
+    margin-bottom: 16px;
+  }
+  .detail-selftext {
+    font-size: 14px;
+    line-height: 1.7;
+    color: var(--text-dim);
+    margin-bottom: 20px;
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .detail-selftext a { color: var(--accent); }
+  .detail-selftext blockquote {
+    border-left: 3px solid var(--border-accent);
+    padding-left: 12px;
+    margin: 8px 0;
+    color: var(--text-faint);
+  }
+  .detail-image {
+    width: 100%;
+    max-height: 600px;
+    object-fit: contain;
+    border-radius: 8px;
+    margin-bottom: 16px;
+    background: var(--surface);
+  }
+  .detail-link {
+    display: block;
+    padding: 12px;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--accent);
+    font-size: 13px;
+    font-family: var(--mono);
+    word-break: break-all;
+    text-decoration: none;
+    margin-bottom: 16px;
+  }
+  .detail-link:hover { border-color: var(--accent); }
+  .detail-stats {
+    display: flex;
+    gap: 20px;
+    padding: 12px 0;
+    border-top: 1px solid var(--border);
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 20px;
+    font-size: 13px;
+    font-weight: 600;
+  }
+
+  /* ── Comments ── */
+  .comments-section h3 {
+    font-size: 14px;
+    font-weight: 700;
+    color: var(--text-dim);
+    margin-bottom: 14px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .comment {
+    padding: 10px 0 10px 14px;
+    border-left: 2px solid var(--border);
+    margin-bottom: 4px;
+  }
+  .comment .comment {
+    margin-left: 4px;
+    margin-top: 8px;
+  }
+  .comment-author {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--accent);
+    margin-bottom: 4px;
+  }
+  .comment-author.op { color: var(--upvote); }
+  .comment-score {
+    font-size: 11px;
+    color: var(--text-faint);
+    font-weight: 400;
+  }
+  .comment-body {
+    font-size: 13px;
+    line-height: 1.6;
+    color: var(--text-dim);
+    word-break: break-word;
+    white-space: pre-wrap;
+  }
+  .comment-body a { color: var(--accent); }
+  .comment-body blockquote {
+    border-left: 2px solid var(--border-accent);
+    padding-left: 10px;
+    margin: 6px 0;
+    color: var(--text-faint);
+  }
+  .comment-more {
+    font-size: 12px;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 6px 0 6px 14px;
+    font-family: var(--font);
+    font-weight: 600;
+  }
+  .comment-more:hover { text-decoration: underline; }
+  .comments-loading {
+    text-align: center;
+    padding: 30px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .comments-loading .spinner { width: 22px; height: 22px; }
+
+  /* ── Edit Modal ── */
+  .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 200;
+    display: flex;
+    align-items: flex-end;
+    justify-content: center;
+    padding: 0;
+    animation: fadeIn 0.15s;
+  }
+  @media (min-width: 500px) {
+    .modal-overlay { align-items: center; padding: 20px; }
+  }
+  .modal-overlay.hidden { display: none; }
+  @keyframes fadeIn { from { opacity: 0; } }
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px 16px 0 0;
+    width: 100%;
+    max-width: 440px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 24px;
+    animation: slideUp 0.2s ease-out;
+  }
+  @media (min-width: 500px) {
+    .modal { border-radius: 16px; }
+  }
+  @keyframes slideUp { from { transform: translateY(40px); opacity: 0; } }
+  .modal h2 {
+    font-size: 18px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .modal p {
+    font-size: 13px;
+    color: var(--text-dim);
+    margin-bottom: 16px;
+  }
+  .sub-list-edit {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    margin-bottom: 16px;
+  }
+  .sub-edit-row {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--bg);
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 14px;
+  }
+  .sub-edit-row span { flex: 1; font-family: var(--mono); font-size: 13px; }
+  .remove-btn {
+    background: none;
+    border: none;
+    color: var(--danger);
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+    padding: 2px 6px;
+    border-radius: 4px;
+    min-width: 32px;
+    min-height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .remove-btn:hover { background: rgba(248,81,73,0.15); }
+  .add-row {
+    display: flex;
+    gap: 8px;
+  }
+  .add-row input {
+    flex: 1;
+    font-family: var(--mono);
+    font-size: 16px; /* prevents iOS zoom */
+    padding: 10px 12px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    outline: none;
+  }
+  .add-row input:focus { border-color: var(--accent); }
+  .add-row input::placeholder { color: var(--text-faint); }
+  .add-row button {
+    padding: 10px 16px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font);
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .import-section {
+    margin-top: 16px;
+    border-top: 1px solid var(--border);
+    padding-top: 12px;
+  }
+  .import-toggle {
+    font-family: var(--font);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    background: none;
+    border: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 4px 0;
+  }
+  .import-toggle:hover { text-decoration: underline; }
+  #importArrow { font-size: 10px; transition: transform 0.15s; }
+  #importArrow.open { transform: rotate(90deg); }
+  .import-body { margin-top: 12px; }
+  .import-body.hidden { display: none; }
+  .import-steps {
+    font-size: 12px;
+    color: var(--text-dim);
+    margin-bottom: 10px;
+    line-height: 1.6;
+  }
+  .import-steps strong { color: var(--text); }
+  .import-steps ol { padding-left: 18px; margin: 6px 0; }
+  .import-steps a { color: var(--accent); }
+  .import-alt { margin-top: 6px; }
+  .import-alt code {
+    font-family: var(--mono);
+    font-size: 11px;
+    background: var(--bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+  }
+  #importArea {
+    width: 100%;
+    font-family: var(--mono);
+    font-size: 12px;
+    padding: 10px;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    resize: vertical;
+    outline: none;
+    min-height: 80px;
+  }
+  #importArea:focus { border-color: var(--accent); }
+  #importArea::placeholder { color: var(--text-faint); }
+  .import-btn {
+    flex: 1;
+    padding: 10px;
+    background: var(--accent);
+    color: var(--bg);
+    border: none;
+    border-radius: 8px;
+    font-family: var(--font);
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  .import-btn.replace {
+    background: transparent;
+    color: var(--upvote);
+    border: 1px solid var(--upvote);
+  }
+  .import-btn.replace:hover { background: rgba(247,129,102,0.12); }
+  .import-btn:hover { opacity: 0.9; }
+  .import-actions {
+    display: flex;
+    gap: 8px;
+    margin-top: 8px;
+  }
+  .bookmarklet-link {
+    display: inline-block;
+    background: var(--accent);
+    color: var(--bg) !important;
+    padding: 5px 12px;
+    border-radius: 6px;
+    text-decoration: none !important;
+    font-weight: 700;
+    font-size: 12px;
+    cursor: grab;
+    white-space: nowrap;
+  }
+  .bookmarklet-link:hover { opacity: 0.9; }
+  .import-result {
+    margin-top: 8px;
+    padding: 8px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+  .import-result.hidden { display: none; }
+  .import-result.success { background: rgba(126,231,135,0.12); color: var(--comment); }
+  .import-result.error { background: rgba(248,81,73,0.12); color: var(--danger); }
+  .modal-close {
+    width: 100%;
+    margin-top: 12px;
+    padding: 12px;
+    background: var(--pill-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-family: var(--font);
+    font-weight: 600;
+    font-size: 14px;
+    cursor: pointer;
+  }
+  .modal-close:hover { border-color: var(--text-faint); }
+
+  /* ── Pull to refresh indicator ── */
+  .refresh-banner {
+    text-align: center;
+    padding: 10px;
+    font-size: 12px;
+    color: var(--accent);
+    display: none;
+  }
+  .refresh-banner.show { display: block; }
+</style>
+</head>
+<body>
+
+<div class="app">
+  <div class="header">
+    <div class="header-top">
+      <div class="logo">
+        <span class="lock">🔒</span> focused
+      </div>
+      <button class="edit-btn" onclick="openEdit()">Edit subs</button>
+    </div>
+    <div class="pill-nav" id="pillNav"></div>
+  </div>
+  <div class="refresh-banner" id="refreshBanner">Refreshing…</div>
+  <div id="content"></div>
+</div>
+
+<!-- Post Detail Panel -->
+<div class="detail-overlay hidden" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="detail-panel hidden" id="detailPanel">
+  <div class="detail-header">
+    <button class="detail-back" onclick="closeDetail()">← Back</button>
+    <a class="detail-open-reddit" id="detailRedditLink" href="#" target="_blank" rel="noopener">open on reddit</a>
+  </div>
+  <div class="detail-body" id="detailBody"></div>
+</div>
+
+<div class="modal-overlay hidden" id="modalOverlay" onclick="closeEdit()">
+  <div class="modal" onclick="event.stopPropagation()">
+    <h2>Your Subreddits</h2>
+    <p>These are the only subreddits you'll see. No search. No explore. Just these.</p>
+    <div class="sub-list-edit" id="subListEdit"></div>
+    <div class="add-row">
+      <input type="text" id="addInput" placeholder="subreddit name" onkeydown="if(event.key==='Enter')addSub()">
+      <button onclick="addSub()">Add</button>
+    </div>
+    <div class="import-section">
+      <button class="import-toggle" onclick="toggleImport()">
+        <span id="importArrow">▶</span> Import from Reddit
+      </button>
+      <div class="import-body hidden" id="importBody">
+        <div class="import-steps">
+          <strong>One-time setup (desktop):</strong>
+          <ol>
+            <li>Drag this link to your bookmarks bar: <a class="bookmarklet-link" href="javascript:void(function(){try{var%20s=document.querySelectorAll('.subscription-box%20a,.subreddit-list%20a,[href*=%22/r/%22]');var%20r=new%20Set();document.querySelectorAll('.subscription-box%20a,.ListingContainer%20a,.subreddit-list%20a').forEach(function(a){var%20m=a.href.match(/\/r\/([^\/\?]+)/);if(m)r.add(m[1])});if(r.size===0){var%20all=document.querySelectorAll('a[href*=%22/r/%22]');all.forEach(function(a){var%20m=a.href.match(/\/r\/([^\/\?]+)/);if(m%26%26!['popular','all','random','home','mod'].includes(m[1].toLowerCase()))r.add(m[1])})}if(r.size===0){fetch('/subreddits/mine/subscriber.json?limit=100',{credentials:'include'}).then(function(r){return%20r.json()}).then(function(j){var%20names=j.data.children.map(function(c){return%20c.data.display_name});prompt('Copy%20this%20(Ctrl+A,%20Ctrl+C):',names.join(',%20'))})}else{prompt('Copy%20this%20(Ctrl+A,%20Ctrl+C):',Array.from(r).sort().join(',%20'))}}catch(e){alert('Error:%20'+e.message)}}());" onclick="event.preventDefault();alert('Drag this link to your bookmarks bar — don\'t click it here!')">📋 Grab My Subs</a></li>
+            <li>Go to <a href="https://old.reddit.com" target="_blank" rel="noopener">old.reddit.com</a> (logged in)</li>
+            <li>Click the bookmarklet — it pops up your sub list</li>
+            <li>Copy it (Ctrl+A → Ctrl+C) and paste below</li>
+          </ol>
+          <strong>On mobile:</strong>
+          <ol>
+            <li>On Reddit, go to your subscriptions/communities list</li>
+            <li>Manually type or copy the names you want</li>
+            <li>Paste below as a comma-separated list</li>
+          </ol>
+          <p class="import-alt">Accepts: <code>sysadmin, PowerShell, homelab</code> or Reddit JSON</p>
+        </div>
+        <textarea id="importArea" placeholder="Paste your subreddit names here…" rows="4"></textarea>
+        <div class="import-actions">
+          <button class="import-btn" onclick="doImport()">Import &amp; merge</button>
+          <button class="import-btn replace" onclick="doImport(true)">Import &amp; replace all</button>
+        </div>
+        <div class="import-result hidden" id="importResult"></div>
+      </div>
+    </div>
+    <button class="modal-close" onclick="closeEdit()">Done</button>
+  </div>
+</div>
+
+<script>
+// ── Register Service Worker ──
+if ('serviceWorker' in navigator) {
+  navigator.serviceWorker.register('./sw.js').catch(() => {});
+}
+
+const STORAGE_KEY = 'focused_reddit_subs';
+const POSTS_PER_PAGE = 15;
+const DEFAULT_SUBS = ['sysadmin','Intune','homelab','netsec','technology','PowerShell'];
+
+let subs = [];
+let activeSub = '__all__';
+let posts = [];
+let afterToken = null;
+let loading = false;
+
+// ── Helpers ──
+function timeAgo(utc) {
+  const d = (Date.now() / 1000 - utc) | 0;
+  if (d < 60) return 'just now';
+  if (d < 3600) return ((d/60)|0) + 'm ago';
+  if (d < 86400) return ((d/3600)|0) + 'h ago';
+  if (d < 2592000) return ((d/86400)|0) + 'd ago';
+  return ((d/2592000)|0) + 'mo ago';
+}
+function kFmt(n) {
+  if (n >= 1e6) return (n/1e6).toFixed(1)+'M';
+  if (n >= 1e3) return (n/1e3).toFixed(1)+'k';
+  return n;
+}
+function decode(s) {
+  if (!s) return s;
+  const el = document.createElement('textarea');
+  el.innerHTML = s;
+  return el.value;
+}
+function esc(s) {
+  const d = document.createElement('div');
+  d.textContent = s;
+  return d.innerHTML;
+}
+
+// ── Persistence ──
+function loadSubs() {
+  try {
+    const s = localStorage.getItem(STORAGE_KEY);
+    subs = s ? JSON.parse(s) : DEFAULT_SUBS;
+  } catch { subs = DEFAULT_SUBS; }
+}
+function saveSubs() {
+  try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
+}
+
+// ── Render Pills ──
+function renderPills() {
+  const nav = document.getElementById('pillNav');
+  let html = `<button class="pill all-pill ${activeSub==='__all__'?'active':''}" onclick="selectSub('__all__')">All</button>`;
+  subs.forEach(s => {
+    html += `<button class="pill ${activeSub===s?'active':''}" onclick="selectSub('${esc(s)}')">r/${esc(s)}</button>`;
+  });
+  nav.innerHTML = html;
+}
+
+// ── Render Posts ──
+function renderPosts() {
+  const el = document.getElementById('content');
+  if (subs.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="big">📭</div><p>No subreddits added yet.</p><p>Tap "Edit subs" to add your favourites.</p></div>';
+    return;
+  }
+  let cards = '';
+  posts.forEach(p => {
+    const d = p.data;
+    const hasPreview = d.preview?.images?.[0]?.source?.url && !d.over_18;
+    const hasThumb = d.thumbnail && d.thumbnail.startsWith('http') && !d.thumbnail.includes('nsfw');
+    const imgUrl = hasPreview ? decode(d.preview.images[0].source.url) : hasThumb ? d.thumbnail : null;
+    const selftext = d.selftext && d.selftext.length > 10 ? esc(d.selftext.slice(0,300)) : '';
+    const linkDomain = !d.is_self && d.domain ? d.domain.replace('www.','') : '';
+    const permalink = 'https://www.reddit.com' + d.permalink;
+
+    cards += `<div class="post-card" onclick="openDetail('${esc(d.subreddit)}','${esc(d.id)}', event)">
+      <div class="post-meta">
+        <span class="post-sub">r/${esc(d.subreddit)}</span>
+        <span>·</span>
+        <span>u/${esc(d.author)}</span>
+        <span>·</span>
+        <span>${timeAgo(d.created_utc)}</span>
+      </div>
+      <div class="post-title ${d.over_18?'nsfw':''}">${d.over_18?'[NSFW] ':''}${esc(d.title)}</div>
+      ${selftext ? `<div class="selftext">${selftext}</div>` : ''}
+      ${imgUrl ? `<img class="post-thumb" src="${imgUrl}" alt="" loading="lazy" onerror="this.style.display='none'">` : ''}
+      <div class="post-footer">
+        <span class="stat up"><span class="icon">▲</span> ${kFmt(d.ups)}</span>
+        <span class="stat cmt"><span class="icon">💬</span> ${d.num_comments}</span>
+        ${linkDomain ? `<span class="post-link-domain">${esc(linkDomain)}</span>` : ''}
+      </div>
+    </div>`;
+  });
+
+  let html = `<div class="posts-grid">${cards}</div>`;
+
+  if (loading) {
+    html += '<div class="loading"><div class="spinner"></div>Loading posts…</div>';
+  }
+  if (!loading && posts.length > 0 && afterToken) {
+    html += `<button class="load-more" onclick="loadMore()">Load more</button>`;
+  }
+  el.innerHTML = html;
+}
+
+function renderError(msg) {
+  document.getElementById('content').innerHTML = `<div class="error-box"><p>Failed to load: ${esc(msg)}</p><button onclick="fetchPosts()">Retry</button></div>`;
+}
+
+// ── Fetch ──
+async function fetchPosts(append) {
+  if (subs.length === 0) { renderPosts(); return; }
+  loading = true;
+  if (!append) { posts = []; afterToken = null; }
+  renderPosts();
+  try {
+    const target = activeSub === '__all__' ? 'r/' + subs.join('+') : 'r/' + activeSub;
+    const url = `https://www.reddit.com/${target}/hot.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after='+afterToken : ''}`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('Reddit returned ' + res.status);
+    const json = await res.json();
+    const newPosts = json.data?.children || [];
+    if (append) { posts = posts.concat(newPosts); } else { posts = newPosts; }
+    afterToken = json.data?.after || null;
+    loading = false;
+    renderPosts();
+  } catch(err) {
+    loading = false;
+    renderError(err.message);
+  }
+}
+
+function selectSub(s) {
+  activeSub = s;
+  renderPills();
+  window.scrollTo(0, 0);
+  fetchPosts();
+}
+
+function loadMore() {
+  fetchPosts(true);
+}
+
+// ── Pull to Refresh (mobile) ──
+let touchStartY = 0;
+document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; });
+document.addEventListener('touchend', e => {
+  const dy = e.changedTouches[0].clientY - touchStartY;
+  if (dy > 120 && window.scrollY === 0) {
+    const banner = document.getElementById('refreshBanner');
+    banner.classList.add('show');
+    fetchPosts().then(() => {
+      setTimeout(() => banner.classList.remove('show'), 500);
+    });
+  }
+});
+
+// ── Edit Modal ──
+function openEdit() {
+  renderEditList();
+  document.getElementById('modalOverlay').classList.remove('hidden');
+}
+function closeEdit() {
+  document.getElementById('modalOverlay').classList.add('hidden');
+  saveSubs();
+  renderPills();
+  fetchPosts();
+}
+function renderEditList() {
+  const el = document.getElementById('subListEdit');
+  el.innerHTML = subs.map((s,i) =>
+    `<div class="sub-edit-row"><span>r/${esc(s)}</span><button class="remove-btn" onclick="removeSub(${i})">×</button></div>`
+  ).join('');
+}
+function addSub() {
+  const input = document.getElementById('addInput');
+  const clean = input.value.trim().replace(/^r\//,'').replace(/\s+/g,'');
+  if (clean && !subs.find(s => s.toLowerCase() === clean.toLowerCase())) {
+    subs.push(clean);
+    saveSubs();
+    renderEditList();
+    input.value = '';
+  }
+}
+function removeSub(i) {
+  const removed = subs[i];
+  subs.splice(i, 1);
+  saveSubs();
+  if (activeSub === removed) activeSub = '__all__';
+  renderEditList();
+}
+
+function toggleImport() {
+  const body = document.getElementById('importBody');
+  const arrow = document.getElementById('importArrow');
+  body.classList.toggle('hidden');
+  arrow.classList.toggle('open');
+}
+
+function doImport(replaceAll) {
+  const raw = document.getElementById('importArea').value.trim();
+  const result = document.getElementById('importResult');
+  if (!raw) return;
+
+  let imported = [];
+
+  // Try parsing as Reddit JSON first
+  try {
+    const json = JSON.parse(raw);
+    // Reddit /subreddits/mine.json format
+    const children = json.data?.children || json.children || [];
+    if (children.length > 0) {
+      imported = children
+        .map(c => c.data?.display_name || c.display_name)
+        .filter(Boolean);
+    }
+    // Maybe it's an array of strings
+    if (imported.length === 0 && Array.isArray(json)) {
+      imported = json.map(s => typeof s === 'string' ? s.replace(/^r\//,'').trim() : '').filter(Boolean);
+    }
+  } catch {
+    // Not JSON — treat as comma/newline/space separated list
+    imported = raw
+      .split(/[,\n\r]+/)
+      .map(s => s.trim().replace(/^r\//,'').replace(/\s+/g,''))
+      .filter(s => s.length > 0 && s.length < 80);
+  }
+
+  if (imported.length === 0) {
+    result.className = 'import-result error';
+    result.textContent = "Couldn't find any subreddit names in that. Try a comma-separated list like: sysadmin, PowerShell, homelab";
+    return;
+  }
+
+  if (replaceAll) {
+    subs.length = 0;
+    imported.forEach(name => {
+      if (!subs.find(s => s.toLowerCase() === name.toLowerCase())) {
+        subs.push(name);
+      }
+    });
+    saveSubs();
+    activeSub = '__all__';
+    renderEditList();
+    result.className = 'import-result success';
+    result.textContent = `Replaced all. Now tracking ${subs.length} subreddit${subs.length !== 1 ? 's' : ''}.`;
+  } else {
+    let added = 0;
+    imported.forEach(name => {
+      if (!subs.find(s => s.toLowerCase() === name.toLowerCase())) {
+        subs.push(name);
+        added++;
+      }
+    });
+    saveSubs();
+    renderEditList();
+    result.className = 'import-result success';
+    result.textContent = `Imported ${added} new subreddit${added !== 1 ? 's' : ''} (${imported.length - added} already existed). Total: ${subs.length}`;
+  }
+}
+
+// ── Detail Panel ──
+function openDetail(subreddit, postId, event) {
+  event.stopPropagation();
+  const post = posts.find(p => p.data.id === postId);
+  if (!post) return;
+  const d = post.data;
+  const permalink = 'https://www.reddit.com' + d.permalink;
+
+  document.getElementById('detailRedditLink').href = permalink;
+  document.getElementById('detailOverlay').classList.remove('hidden');
+  document.getElementById('detailPanel').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+
+  // Build post content
+  const hasPreview = d.preview?.images?.[0]?.source?.url && !d.over_18;
+  const hasThumb = d.thumbnail && d.thumbnail.startsWith('http') && !d.thumbnail.includes('nsfw');
+  const imgUrl = hasPreview ? decode(d.preview.images[0].source.url) : hasThumb ? d.thumbnail : null;
+  const isLink = !d.is_self && d.url;
+
+  let html = `
+    <div class="detail-sub">r/${esc(d.subreddit)}</div>
+    <div class="detail-author">u/${esc(d.author)} · ${timeAgo(d.created_utc)}</div>
+    <div class="detail-title">${esc(d.title)}</div>
+  `;
+
+  if (imgUrl) {
+    html += `<img class="detail-image" src="${imgUrl}" alt="" onerror="this.style.display='none'">`;
+  }
+  if (isLink) {
+    html += `<a class="detail-link" href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.url)}</a>`;
+  }
+  if (d.selftext) {
+    html += `<div class="detail-selftext">${formatRedditText(d.selftext)}</div>`;
+  }
+
+  html += `
+    <div class="detail-stats">
+      <span class="stat up"><span class="icon">▲</span> ${kFmt(d.ups)}</span>
+      <span class="stat cmt"><span class="icon">💬</span> ${d.num_comments} comments</span>
+    </div>
+    <div class="comments-section" id="commentsSection">
+      <div class="comments-loading"><div class="spinner"></div>Loading comments…</div>
+    </div>
+  `;
+
+  document.getElementById('detailBody').innerHTML = html;
+  document.getElementById('detailPanel').scrollTop = 0;
+
+  // Fetch comments
+  fetchComments(d.permalink);
+}
+
+function closeDetail() {
+  document.getElementById('detailOverlay').classList.add('hidden');
+  document.getElementById('detailPanel').classList.add('hidden');
+  document.body.style.overflow = '';
+}
+
+// Close on Escape key
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') {
+    if (!document.getElementById('detailPanel').classList.contains('hidden')) {
+      closeDetail();
+    }
+  }
+});
+
+async function fetchComments(permalink) {
+  try {
+    const url = `https://www.reddit.com${permalink}.json?raw_json=1&limit=100&depth=5&sort=top`;
+    const res = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!res.ok) throw new Error('Failed to load comments');
+    const json = await res.json();
+    // Reddit returns [post, comments] array
+    const commentData = json[1]?.data?.children || [];
+    const postAuthor = json[0]?.data?.children?.[0]?.data?.author || '';
+    renderComments(commentData, postAuthor);
+  } catch (err) {
+    const el = document.getElementById('commentsSection');
+    if (el) el.innerHTML = `<div class="comments-loading" style="color:var(--danger)">Failed to load comments: ${esc(err.message)}</div>`;
+  }
+}
+
+function renderComments(comments, postAuthor) {
+  const el = document.getElementById('commentsSection');
+  if (!el) return;
+
+  const filtered = comments.filter(c => c.kind === 't1');
+  if (filtered.length === 0) {
+    el.innerHTML = '<h3>Comments</h3><div class="comments-loading">No comments yet</div>';
+    return;
+  }
+
+  let html = `<h3>${filtered.length} Top Comments</h3>`;
+  html += renderCommentTree(filtered, postAuthor, 0);
+  el.innerHTML = html;
+}
+
+function renderCommentTree(comments, postAuthor, depth) {
+  if (depth > 4) return '';
+  let html = '';
+  for (const c of comments) {
+    if (c.kind === 'more') {
+      const count = c.data?.count || 0;
+      if (count > 0) {
+        html += `<div class="comment-more">+ ${count} more repl${count === 1 ? 'y' : 'ies'}</div>`;
+      }
+      continue;
+    }
+    if (c.kind !== 't1') continue;
+    const d = c.data;
+    const isOp = d.author === postAuthor;
+    const score = d.score != null ? d.score : '';
+
+    html += `<div class="comment">
+      <div class="comment-author ${isOp ? 'op' : ''}">
+        ${esc(d.author)}${isOp ? ' <span style="font-size:10px;opacity:0.7">(OP)</span>' : ''}
+        <span class="comment-score"> · ▲ ${kFmt(score)} · ${timeAgo(d.created_utc)}</span>
+      </div>
+      <div class="comment-body">${formatRedditText(d.body || '')}</div>`;
+
+    // Render replies
+    const replies = d.replies?.data?.children;
+    if (replies && replies.length > 0) {
+      html += renderCommentTree(replies, postAuthor, depth + 1);
+    }
+    html += '</div>';
+  }
+  return html;
+}
+
+function formatRedditText(text) {
+  if (!text) return '';
+  let s = esc(text);
+  // Convert markdown-ish formatting
+  s = s.replace(/\n\n/g, '<br><br>');
+  s = s.replace(/\n/g, '<br>');
+  // Bold
+  s = s.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic
+  s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Inline code
+  s = s.replace(/`(.+?)`/g, '<code style="background:var(--pill-bg);padding:1px 4px;border-radius:3px;font-size:12px;">$1</code>');
+  // Links [text](url)
+  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Bare URLs
+  s = s.replace(/(^|[^"=])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  // Blockquotes
+  s = s.replace(/(^|<br>)&gt;\s?(.+?)(<br>|$)/g, '$1<blockquote>$2</blockquote>$3');
+  // Strikethrough
+  s = s.replace(/~~(.+?)~~/g, '<del>$1</del>');
+  return s;
+}
+
+// ── Init ──
+loadSubs();
+renderPills();
+fetchPosts();
+</script>
+</body>
+</html>
