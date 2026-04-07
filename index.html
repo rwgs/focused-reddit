@@ -6,10 +6,10 @@
 <meta name="theme-color" content="#0d1117">
 <meta name="apple-mobile-web-app-capable" content="yes">
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-<meta name="apple-mobile-web-app-title" content="Focused">
+<meta name="apple-mobile-web-app-title" content="FocusRed">
 <link rel="apple-touch-icon" href="icons/icon-192x192.png">
 <link rel="manifest" href="manifest.json">
-<title>Focused Reddit</title>
+<title>FocusRed</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link href="https://fonts.googleapis.com/css2?family=DM+Sans:ital,opsz,wght@0,9..40,300;0,9..40,500;0,9..40,700;1,9..40,400&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
@@ -733,7 +733,7 @@
   <div class="header">
     <div class="header-top">
       <div class="logo">
-        <span class="lock">🔒</span> focused
+        <span class="lock">🔒</span> FocusRed <span style="font-size:11px;color:var(--text-faint);font-weight:400">v1.0</span>
       </div>
       <button class="edit-btn" onclick="openEdit()">Edit subs</button>
     </div>
@@ -806,7 +806,7 @@ const POSTS_PER_PAGE = 15;
 const DEFAULT_SUBS = ['sysadmin','Intune','homelab','netsec','technology','PowerShell'];
 
 let subs = [];
-let activeSub = '__all__';
+let selectedSubs = new Set(); // empty = all
 let posts = [];
 let afterToken = null;
 let loading = false;
@@ -851,9 +851,12 @@ function saveSubs() {
 // ── Render Pills ──
 function renderPills() {
   const nav = document.getElementById('pillNav');
-  let html = `<button class="pill all-pill ${activeSub==='__all__'?'active':''}" onclick="selectSub('__all__')">All</button>`;
+  const allActive = selectedSubs.size === 0;
+  const count = selectedSubs.size;
+  let html = `<button class="pill all-pill ${allActive?'active':''}" onclick="selectSub('__all__')">All${count > 0 ? ` <span style="font-size:11px;opacity:0.6">(reset)</span>` : ''}</button>`;
   subs.forEach(s => {
-    html += `<button class="pill ${activeSub===s?'active':''}" onclick="selectSub('${esc(s)}')">r/${esc(s)}</button>`;
+    const active = selectedSubs.has(s);
+    html += `<button class="pill ${active?'active':''}" onclick="selectSub('${esc(s)}')">r/${esc(s)}</button>`;
   });
   nav.innerHTML = html;
 }
@@ -906,24 +909,57 @@ function renderPosts() {
 }
 
 function renderError(msg) {
-  document.getElementById('content').innerHTML = `<div class="error-box"><p>Failed to load: ${esc(msg)}</p><button onclick="fetchPosts()">Retry</button></div>`;
+  document.getElementById('content').innerHTML = `<div class="error-box">
+    <p>Failed to load: ${esc(msg)}</p>
+    <button onclick="fetchPosts()">Retry</button>
+    <p style="margin-top:16px;font-size:11px;color:var(--text-faint)">
+      Debug: try opening <a href="https://www.reddit.com/r/all/hot.json?limit=1" target="_blank" style="color:var(--accent)">this link</a> directly.
+      If it doesn't load, an extension (ad blocker, privacy tool) may be blocking Reddit requests.
+    </p>
+  </div>`;
 }
 
 // ── Fetch ──
-async function fetchWithRetry(url, retries = 2) {
-  for (let i = 0; i <= retries; i++) {
+const REDDIT_BASES = [
+  'https://www.reddit.com',
+  'https://old.reddit.com',
+  'https://api.reddit.com'
+];
+
+async function fetchRedditJson(path) {
+  // Try each Reddit endpoint until one works
+  for (const base of REDDIT_BASES) {
     try {
-      const res = await fetch(url, { headers: { Accept: 'application/json' } });
-      if (res.status === 500 || res.status === 503 || res.status === 429) {
-        if (i < retries) { await new Promise(r => setTimeout(r, 1000 * (i + 1))); continue; }
+      const url = base + path;
+      const controller = new AbortController();
+      const timeout = setTimeout(() => controller.abort(), 8000);
+      const res = await fetch(url, {
+        headers: { Accept: 'application/json' },
+        signal: controller.signal
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const json = await res.json();
+        return json;
       }
-      if (!res.ok) throw new Error('Reddit returned ' + res.status);
-      return await res.json();
+      // 500/503 - try next base
+      if (res.status >= 500) continue;
+      // 429 rate limit - wait and retry same base
+      if (res.status === 429) {
+        await new Promise(r => setTimeout(r, 2000));
+        const retry = await fetch(url, { headers: { Accept: 'application/json' } });
+        if (retry.ok) return await retry.json();
+        continue;
+      }
+      // Other error
+      throw new Error('Reddit returned ' + res.status);
     } catch(err) {
-      if (i < retries) { await new Promise(r => setTimeout(r, 1000 * (i + 1))); continue; }
-      throw err;
+      if (err.message && err.message.includes('Reddit returned')) throw err;
+      // Network error or timeout - try next base
+      continue;
     }
   }
+  throw new Error('All Reddit endpoints failed. Check your network or try refreshing.');
 }
 
 async function fetchPosts(append) {
@@ -932,43 +968,41 @@ async function fetchPosts(append) {
   if (!append) { posts = []; afterToken = null; }
   renderPosts();
   try {
-    if (activeSub === '__all__' && !append) {
-      // Fetch each sub individually to avoid Reddit 500s on large multi-reddits
-      // Chunk into groups of 5 to balance speed vs reliability
+    const active = getActiveSubs();
+    if (active.length > 1 && !append) {
+      // Multiple subs: fetch in chunks and merge
       const chunkSize = 5;
       let allPosts = [];
-      for (let i = 0; i < subs.length; i += chunkSize) {
-        const chunk = subs.slice(i, i + chunkSize);
+      for (let i = 0; i < active.length; i += chunkSize) {
+        const chunk = active.slice(i, i + chunkSize);
         const target = 'r/' + chunk.join('+');
         try {
-          const json = await fetchWithRetry(`https://old.reddit.com/${target}/hot.json?limit=10&raw_json=1`);
+          const json = await fetchRedditJson(`/${target}/hot.json?limit=10&raw_json=1`);
           allPosts = allPosts.concat(json.data?.children || []);
         } catch(e) {
-          // If a chunk fails, try each sub individually
           for (const sub of chunk) {
             try {
-              const json = await fetchWithRetry(`https://old.reddit.com/r/${sub}/hot.json?limit=8&raw_json=1`);
+              const json = await fetchRedditJson(`/r/${sub}/hot.json?limit=8&raw_json=1`);
               allPosts = allPosts.concat(json.data?.children || []);
             } catch { /* skip failed sub */ }
           }
         }
       }
-      // Sort by hot score (approximation: use score / age)
       allPosts.sort((a, b) => b.data.score - a.data.score);
-      // Deduplicate by id
       const seen = new Set();
       posts = allPosts.filter(p => {
         if (seen.has(p.data.id)) return false;
         seen.add(p.data.id);
         return true;
       }).slice(0, POSTS_PER_PAGE * 2);
-      afterToken = null; // no pagination for merged view
+      afterToken = null;
       loading = false;
       renderPosts();
     } else {
-      const target = activeSub === '__all__' ? 'r/' + subs.join('+') : 'r/' + activeSub;
-      const url = `https://old.reddit.com/${target}/hot.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after='+afterToken : ''}`;
-      const json = await fetchWithRetry(url);
+      // Single sub or paginating
+      const target = 'r/' + active.join('+');
+      const path = `/${target}/hot.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after='+afterToken : ''}`;
+      const json = await fetchRedditJson(path);
       const newPosts = json.data?.children || [];
       if (append) { posts = posts.concat(newPosts); } else { posts = newPosts; }
       afterToken = json.data?.after || null;
@@ -982,10 +1016,23 @@ async function fetchPosts(append) {
 }
 
 function selectSub(s) {
-  activeSub = s;
+  if (s === '__all__') {
+    selectedSubs.clear();
+  } else {
+    if (selectedSubs.has(s)) {
+      selectedSubs.delete(s);
+    } else {
+      selectedSubs.add(s);
+    }
+  }
   renderPills();
   window.scrollTo(0, 0);
   fetchPosts();
+}
+
+// Helper: get the list of subs to fetch
+function getActiveSubs() {
+  return selectedSubs.size === 0 ? subs : Array.from(selectedSubs);
 }
 
 function loadMore() {
@@ -1040,7 +1087,7 @@ function removeSub(i) {
   const removed = subs[i];
   subs.splice(i, 1);
   saveSubs();
-  if (activeSub === removed) activeSub = '__all__';
+  selectedSubs.delete(removed);
   renderEditList();
 }
 
@@ -1094,7 +1141,7 @@ function doImport(replaceAll) {
       }
     });
     saveSubs();
-    activeSub = '__all__';
+    selectedSubs.clear();
     renderEditList();
     result.className = 'import-result success';
     result.textContent = `Replaced all. Now tracking ${subs.length} subreddit${subs.length !== 1 ? 's' : ''}.`;
@@ -1193,11 +1240,7 @@ document.addEventListener('keydown', e => {
 
 async function fetchComments(permalink) {
   try {
-    const url = `https://old.reddit.com${permalink}.json?raw_json=1&limit=100&depth=5&sort=top`;
-    const res = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!res.ok) throw new Error('Failed to load comments');
-    const json = await res.json();
-    // Reddit returns [post, comments] array
+    const json = await fetchRedditJson(`${permalink}.json?raw_json=1&limit=100&depth=5&sort=top`);
     const commentData = json[1]?.data?.children || [];
     const postAuthor = json[0]?.data?.children?.[0]?.data?.author || '';
     renderComments(commentData, postAuthor);

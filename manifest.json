@@ -1,7 +1,7 @@
 {
-  "name": "Focused Reddit",
-  "short_name": "Focused",
-  "description": "A locked-down Reddit reader. Only your chosen subreddits. No search. No explore. No doom scrolling.",
+  "name": "FocusRed",
+  "short_name": "FocusRed",
+  "description": "A locked-down Reddit reader. Only your chosen subreddits. No search. No explore. No doom scrolling. v1.0",
   "start_url": "./index.html",
   "display": "standalone",
   "background_color": "#0d1117",
