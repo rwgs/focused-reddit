@@ -83,14 +83,21 @@
     z-index: 100;
     background: var(--bg);
     border-bottom: 1px solid var(--border);
-    padding: 16px 0 12px;
+    padding: 12px 0 8px;
     margin-bottom: 4px;
+  }
+  .header::after {
+    content: '';
+    position: absolute;
+    left: -20px; right: -20px; top: 0; bottom: 0;
+    background: var(--bg);
+    z-index: -1;
   }
   .header-top {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    margin-bottom: 14px;
+    margin-bottom: 10px;
   }
   .logo {
     font-family: var(--mono);
@@ -766,22 +773,24 @@
       </button>
       <div class="import-body hidden" id="importBody">
         <div class="import-steps">
-          <strong>One-time setup (desktop):</strong>
+          <strong>Easiest — paste the JSON:</strong>
           <ol>
-            <li>Drag this link to your bookmarks bar: <a class="bookmarklet-link" href="javascript:void(function(){try{var%20s=document.querySelectorAll('.subscription-box%20a,.subreddit-list%20a,[href*=%22/r/%22]');var%20r=new%20Set();document.querySelectorAll('.subscription-box%20a,.ListingContainer%20a,.subreddit-list%20a').forEach(function(a){var%20m=a.href.match(/\/r\/([^\/\?]+)/);if(m)r.add(m[1])});if(r.size===0){var%20all=document.querySelectorAll('a[href*=%22/r/%22]');all.forEach(function(a){var%20m=a.href.match(/\/r\/([^\/\?]+)/);if(m%26%26!['popular','all','random','home','mod'].includes(m[1].toLowerCase()))r.add(m[1])})}if(r.size===0){fetch('/subreddits/mine/subscriber.json?limit=100',{credentials:'include'}).then(function(r){return%20r.json()}).then(function(j){var%20names=j.data.children.map(function(c){return%20c.data.display_name});prompt('Copy%20this%20(Ctrl+A,%20Ctrl+C):',names.join(',%20'))})}else{prompt('Copy%20this%20(Ctrl+A,%20Ctrl+C):',Array.from(r).sort().join(',%20'))}}catch(e){alert('Error:%20'+e.message)}}());" onclick="event.preventDefault();alert('Drag this link to your bookmarks bar — don\'t click it here!')">📋 Grab My Subs</a></li>
-            <li>Go to <a href="https://old.reddit.com" target="_blank" rel="noopener">old.reddit.com</a> (logged in)</li>
-            <li>Click the bookmarklet — it pops up your sub list</li>
-            <li>Copy it (Ctrl+A → Ctrl+C) and paste below</li>
+            <li>Open <a href="https://www.reddit.com/subreddits/mine.json" target="_blank" rel="noopener">reddit.com/subreddits/mine.json</a> while logged in to Reddit</li>
+            <li>Select all (Ctrl+A / ⌘A) and copy</li>
+            <li>Paste below and hit Import</li>
           </ol>
-          <strong>On mobile:</strong>
-          <ol>
-            <li>On Reddit, go to your subscriptions/communities list</li>
-            <li>Manually type or copy the names you want</li>
-            <li>Paste below as a comma-separated list</li>
-          </ol>
-          <p class="import-alt">Accepts: <code>sysadmin, PowerShell, homelab</code> or Reddit JSON</p>
+          <strong>Or just type them:</strong>
+          <p class="import-alt">Comma-separated list: <code>sysadmin, PowerShell, homelab</code></p>
+          <details style="margin-top:10px">
+            <summary style="font-size:12px;color:var(--accent);cursor:pointer"><strong>Desktop: bookmarklet method</strong></summary>
+            <ol style="margin-top:6px">
+              <li>Drag this to your bookmarks bar: <a class="bookmarklet-link" href="javascript:void(function(){try{var%20s=document.querySelectorAll('.subscription-box%20a,.subreddit-list%20a,[href*=%22/r/%22]');var%20r=new%20Set();document.querySelectorAll('.subscription-box%20a,.ListingContainer%20a,.subreddit-list%20a').forEach(function(a){var%20m=a.href.match(/\/r\/([^\/\?]+)/);if(m)r.add(m[1])});if(r.size===0){var%20all=document.querySelectorAll('a[href*=%22/r/%22]');all.forEach(function(a){var%20m=a.href.match(/\/r\/([^\/\?]+)/);if(m%26%26!['popular','all','random','home','mod'].includes(m[1].toLowerCase()))r.add(m[1])})}if(r.size===0){fetch('/subreddits/mine/subscriber.json?limit=100',{credentials:'include'}).then(function(r){return%20r.json()}).then(function(j){var%20names=j.data.children.map(function(c){return%20c.data.display_name});prompt('Copy%20this%20(Ctrl+A,%20Ctrl+C):',names.join(',%20'))})}else{prompt('Copy%20this%20(Ctrl+A,%20Ctrl+C):',Array.from(r).sort().join(',%20'))}}catch(e){alert('Error:%20'+e.message)}}());" onclick="event.preventDefault();alert('Drag this link to your bookmarks bar — don\'t click it here!')">📋 Grab My Subs</a></li>
+              <li>Go to <a href="https://old.reddit.com" target="_blank" rel="noopener">old.reddit.com</a> (logged in), click the bookmarklet</li>
+              <li>Copy the popup text, paste below</li>
+            </ol>
+          </details>
         </div>
-        <textarea id="importArea" placeholder="Paste your subreddit names here…" rows="4"></textarea>
+        <textarea id="importArea" placeholder="Paste JSON or comma-separated subreddit names here…" rows="4"></textarea>
         <div class="import-actions">
           <button class="import-btn" onclick="doImport()">Import &amp; merge</button>
           <button class="import-btn replace" onclick="doImport(true)">Import &amp; replace all</button>
@@ -851,8 +860,9 @@ function renderPills() {
   const nav = document.getElementById('pillNav');
   const allActive = selectedSubs.size === 0;
   const count = selectedSubs.size;
-  let html = `<button class="pill all-pill ${allActive?'active':''}" onclick="selectSub('__all__')">All${count > 0 ? ` <span style="font-size:11px;opacity:0.6">(reset)</span>` : ''}</button>`;
-  subs.forEach(s => {
+  const sorted = [...subs].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  let html = `<button class="pill all-pill ${allActive?'active':''}" onclick="selectSub('__all__')">All${count > 0 ? ` <span style="font-size:10px;opacity:0.6">(reset)</span>` : ''}</button>`;
+  sorted.forEach(s => {
     const active = selectedSubs.has(s);
     html += `<button class="pill ${active?'active':''}" onclick="selectSub('${esc(s)}')">r/${esc(s)}</button>`;
   });
