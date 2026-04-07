@@ -347,10 +347,13 @@
     background: none;
     border: none;
     cursor: pointer;
-    padding: 4px 0;
+    padding: 10px 16px;
+    margin: -10px -16px;
     display: flex;
     align-items: center;
     gap: 6px;
+    -webkit-tap-highlight-color: rgba(88,166,255,0.2);
+    touch-action: manipulation;
   }
   .detail-back:hover { text-decoration: underline; }
   .detail-open-reddit {
@@ -741,10 +744,10 @@
 </div>
 
 <!-- Post Detail Panel -->
-<div class="detail-overlay hidden" id="detailOverlay" onclick="closeDetail()"></div>
+<div class="detail-overlay hidden" id="detailOverlay"></div>
 <div class="detail-panel hidden" id="detailPanel">
   <div class="detail-header">
-    <button class="detail-back" onclick="closeDetail()">← Back</button>
+    <button class="detail-back" id="detailBackBtn">← Back</button>
     <a class="detail-open-reddit" id="detailRedditLink" href="#" target="_blank" rel="noopener">open on reddit</a>
   </div>
   <div class="detail-body" id="detailBody"></div>
@@ -938,13 +941,13 @@ async function fetchPosts(append) {
         const chunk = subs.slice(i, i + chunkSize);
         const target = 'r/' + chunk.join('+');
         try {
-          const json = await fetchWithRetry(`https://www.reddit.com/${target}/hot.json?limit=10&raw_json=1`);
+          const json = await fetchWithRetry(`https://old.reddit.com/${target}/hot.json?limit=10&raw_json=1`);
           allPosts = allPosts.concat(json.data?.children || []);
         } catch(e) {
           // If a chunk fails, try each sub individually
           for (const sub of chunk) {
             try {
-              const json = await fetchWithRetry(`https://www.reddit.com/r/${sub}/hot.json?limit=8&raw_json=1`);
+              const json = await fetchWithRetry(`https://old.reddit.com/r/${sub}/hot.json?limit=8&raw_json=1`);
               allPosts = allPosts.concat(json.data?.children || []);
             } catch { /* skip failed sub */ }
           }
@@ -964,7 +967,7 @@ async function fetchPosts(append) {
       renderPosts();
     } else {
       const target = activeSub === '__all__' ? 'r/' + subs.join('+') : 'r/' + activeSub;
-      const url = `https://www.reddit.com/${target}/hot.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after='+afterToken : ''}`;
+      const url = `https://old.reddit.com/${target}/hot.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after='+afterToken : ''}`;
       const json = await fetchWithRetry(url);
       const newPosts = json.data?.children || [];
       if (append) { posts = posts.concat(newPosts); } else { posts = newPosts; }
@@ -991,8 +994,11 @@ function loadMore() {
 
 // ── Pull to Refresh (mobile) ──
 let touchStartY = 0;
-document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; });
+document.addEventListener('touchstart', e => { touchStartY = e.touches[0].clientY; }, {passive: true});
 document.addEventListener('touchend', e => {
+  // Don't trigger refresh if detail panel or modal is open
+  if (!document.getElementById('detailPanel').classList.contains('hidden')) return;
+  if (!document.getElementById('modalOverlay').classList.contains('hidden')) return;
   const dy = e.changedTouches[0].clientY - touchStartY;
   if (dy > 120 && window.scrollY === 0) {
     const banner = document.getElementById('refreshBanner');
@@ -1001,7 +1007,7 @@ document.addEventListener('touchend', e => {
       setTimeout(() => banner.classList.remove('show'), 500);
     });
   }
-});
+}, {passive: true});
 
 // ── Edit Modal ──
 function openEdit() {
@@ -1165,6 +1171,17 @@ function closeDetail() {
   document.body.style.overflow = '';
 }
 
+// Back button and overlay - use both click and touchend for mobile reliability
+document.getElementById('detailBackBtn').addEventListener('click', function(e) {
+  e.preventDefault();
+  e.stopPropagation();
+  closeDetail();
+});
+document.getElementById('detailOverlay').addEventListener('click', function(e) {
+  e.preventDefault();
+  closeDetail();
+});
+
 // Close on Escape key
 document.addEventListener('keydown', e => {
   if (e.key === 'Escape') {
@@ -1176,7 +1193,7 @@ document.addEventListener('keydown', e => {
 
 async function fetchComments(permalink) {
   try {
-    const url = `https://www.reddit.com${permalink}.json?raw_json=1&limit=100&depth=5&sort=top`;
+    const url = `https://old.reddit.com${permalink}.json?raw_json=1&limit=100&depth=5&sort=top`;
     const res = await fetch(url, { headers: { Accept: 'application/json' } });
     if (!res.ok) throw new Error('Failed to load comments');
     const json = await res.json();
