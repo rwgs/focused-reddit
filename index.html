@@ -911,28 +911,44 @@ function sanitizeSubName(name) {
 }
 
 // ── Persistence (URL hash is primary, localStorage is backup) ──
-function subsToHash(subList) {
-  return '#' + subList.map(s => encodeURIComponent(s)).join('+');
+function buildHash() {
+  let h = '#' + subs.map(s => encodeURIComponent(s)).join('+');
+  if (selectedSubs.size > 0) {
+    h += '!' + Array.from(selectedSubs).map(s => encodeURIComponent(s)).join('+');
+  }
+  return h;
 }
-function subsFromHash() {
+function parseHash() {
   const hash = window.location.hash.slice(1);
   if (!hash) return null;
-  const parts = hash.split('+')
+  const parts = hash.split('!');
+  const subList = parts[0].split('+')
     .map(s => sanitizeSubName(decodeURIComponent(s)))
     .filter(Boolean);
-  return parts.length > 0 ? parts : null;
+  let selected = [];
+  if (parts[1]) {
+    selected = parts[1].split('+')
+      .map(s => sanitizeSubName(decodeURIComponent(s)))
+      .filter(Boolean);
+  }
+  return subList.length > 0 ? { subs: subList, selected } : null;
 }
 function loadSubs() {
-  const fromHash = subsFromHash();
+  const fromHash = parseHash();
   if (fromHash) {
-    subs = fromHash;
+    subs = fromHash.subs;
+    selectedSubs.clear();
+    fromHash.selected.forEach(s => {
+      if (subs.find(x => x.toLowerCase() === s.toLowerCase())) {
+        selectedSubs.add(s);
+      }
+    });
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
     return;
   }
   try {
     const s = localStorage.getItem(STORAGE_KEY);
     const parsed = s ? JSON.parse(s) : DEFAULT_SUBS;
-    // Sanitize anything from localStorage too
     subs = (Array.isArray(parsed) ? parsed : DEFAULT_SUBS)
       .map(sanitizeSubName).filter(Boolean);
     if (subs.length === 0) subs = DEFAULT_SUBS;
@@ -945,18 +961,23 @@ function saveSubs() {
 }
 function updateHash() {
   if (subs.length > 0) {
-    const newHash = subsToHash(subs);
+    const newHash = buildHash();
     if (window.location.hash !== newHash) {
       history.replaceState(null, '', newHash);
     }
   }
 }
 window.addEventListener('hashchange', () => {
-  const fromHash = subsFromHash();
+  const fromHash = parseHash();
   if (fromHash) {
-    subs = fromHash;
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
+    subs = fromHash.subs;
     selectedSubs.clear();
+    fromHash.selected.forEach(s => {
+      if (subs.find(x => x.toLowerCase() === s.toLowerCase())) {
+        selectedSubs.add(s);
+      }
+    });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
     renderPills();
     fetchPosts();
     adjustContentOffset();
@@ -1157,7 +1178,7 @@ function changeSort(sort) {
 }
 
 function shareLink() {
-  const url = window.location.origin + window.location.pathname + subsToHash(subs);
+  const url = window.location.origin + window.location.pathname + buildHash();
   if (navigator.share) {
     navigator.share({ title: 'FocusRed', url: url }).catch(() => {});
   } else {
@@ -1182,6 +1203,7 @@ function selectSub(s) {
       selectedSubs.add(s);
     }
   }
+  updateHash();
   renderPills();
   window.scrollTo(0, 0);
   fetchPosts();
