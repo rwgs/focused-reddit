@@ -138,6 +138,42 @@
     transition: all 0.15s;
   }
   .edit-btn:hover { border-color: var(--accent); color: var(--accent); }
+  .header-controls {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .sort-select {
+    font-family: var(--font);
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-dim);
+    background: var(--pill-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 5px 8px;
+    cursor: pointer;
+    outline: none;
+    -webkit-appearance: none;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%238b949e'/%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    padding-right: 22px;
+  }
+  .sort-select:focus { border-color: var(--accent); }
+  .sort-select option { background: var(--surface); color: var(--text); }
+  .share-btn {
+    font-size: 14px;
+    background: var(--pill-bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 4px 8px;
+    cursor: pointer;
+    transition: all 0.15s;
+    line-height: 1;
+  }
+  .share-btn:hover { border-color: var(--accent); }
 
   /* ── Pill Nav ── */
   .pill-nav {
@@ -474,8 +510,8 @@
   .comment-author.op { color: var(--upvote); }
   .comment-score {
     font-size: 11px;
-    color: var(--text-faint);
-    font-weight: 400;
+    color: var(--upvote);
+    font-weight: 600;
   }
   .comment-body {
     font-size: 13px;
@@ -747,7 +783,16 @@
       <div class="logo">
         <span class="lock">🔒</span> FocusRed <span style="font-size:11px;color:var(--text-faint);font-weight:400">v1.0</span>
       </div>
-      <button class="edit-btn" onclick="openEdit()">Edit subs</button>
+      <div class="header-controls">
+        <select class="sort-select" id="sortSelect" onchange="changeSort(this.value)">
+          <option value="hot">Hot</option>
+          <option value="new">New</option>
+          <option value="top">Top</option>
+          <option value="rising">Rising</option>
+        </select>
+        <button class="share-btn" onclick="shareLink()" title="Copy share link">📋</button>
+        <button class="edit-btn" onclick="openEdit()">Edit subs</button>
+      </div>
     </div>
     <div class="pill-nav" id="pillNav"></div>
   </div>
@@ -784,10 +829,11 @@
         <div class="import-steps">
           <strong>Easiest — paste the JSON:</strong>
           <ol>
-            <li>Open <a href="https://www.reddit.com/subreddits/mine.json" target="_blank" rel="noopener">reddit.com/subreddits/mine.json</a> while logged in to Reddit</li>
+            <li>Open <a href="https://www.reddit.com/subreddits/mine.json?limit=100" target="_blank" rel="noopener">reddit.com/subreddits/mine.json?limit=100</a> while logged in to Reddit</li>
             <li>Select all (Ctrl+A / ⌘A) and copy</li>
             <li>Paste below and hit Import</li>
           </ol>
+          <p class="import-alt" style="margin-bottom:6px">Got more than 100 subs? Open the page, scroll to the bottom of the JSON, find <code>"after":"t5_xxxxx"</code>, then open <code>reddit.com/subreddits/mine.json?limit=100&after=t5_xxxxx</code> and paste that too.</p>
           <strong>Or just type them:</strong>
           <p class="import-alt">Comma-separated list: <code>sysadmin, PowerShell, homelab</code></p>
           <details style="margin-top:10px">
@@ -819,10 +865,11 @@ if ('serviceWorker' in navigator) {
 
 const STORAGE_KEY = 'focused_reddit_subs';
 const POSTS_PER_PAGE = 15;
-const DEFAULT_SUBS = ['sysadmin','Intune','homelab','netsec','technology','PowerShell'];
+const DEFAULT_SUBS = ['claudeai','selfhosted'];
 
 let subs = [];
 let selectedSubs = new Set(); // empty = all
+let currentSort = 'hot';
 let posts = [];
 let afterToken = null;
 let loading = false;
@@ -853,16 +900,68 @@ function esc(s) {
   return d.innerHTML;
 }
 
-// ── Persistence ──
+// ── Sub name validation ──
+// Reddit sub names: 2-21 chars, alphanumeric + underscores only
+function sanitizeSubName(name) {
+  if (!name || typeof name !== 'string') return null;
+  const clean = name.trim().replace(/^\/?(r\/)?/, '');
+  // Only allow valid Reddit subreddit characters
+  if (!/^[a-zA-Z0-9_]{2,21}$/.test(clean)) return null;
+  return clean;
+}
+
+// ── Persistence (URL hash is primary, localStorage is backup) ──
+function subsToHash(subList) {
+  return '#' + subList.map(s => encodeURIComponent(s)).join('+');
+}
+function subsFromHash() {
+  const hash = window.location.hash.slice(1);
+  if (!hash) return null;
+  const parts = hash.split('+')
+    .map(s => sanitizeSubName(decodeURIComponent(s)))
+    .filter(Boolean);
+  return parts.length > 0 ? parts : null;
+}
 function loadSubs() {
+  const fromHash = subsFromHash();
+  if (fromHash) {
+    subs = fromHash;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
+    return;
+  }
   try {
     const s = localStorage.getItem(STORAGE_KEY);
-    subs = s ? JSON.parse(s) : DEFAULT_SUBS;
+    const parsed = s ? JSON.parse(s) : DEFAULT_SUBS;
+    // Sanitize anything from localStorage too
+    subs = (Array.isArray(parsed) ? parsed : DEFAULT_SUBS)
+      .map(sanitizeSubName).filter(Boolean);
+    if (subs.length === 0) subs = DEFAULT_SUBS;
   } catch { subs = DEFAULT_SUBS; }
+  updateHash();
 }
 function saveSubs() {
   try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
+  updateHash();
 }
+function updateHash() {
+  if (subs.length > 0) {
+    const newHash = subsToHash(subs);
+    if (window.location.hash !== newHash) {
+      history.replaceState(null, '', newHash);
+    }
+  }
+}
+window.addEventListener('hashchange', () => {
+  const fromHash = subsFromHash();
+  if (fromHash) {
+    subs = fromHash;
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(subs)); } catch {}
+    selectedSubs.clear();
+    renderPills();
+    fetchPosts();
+    adjustContentOffset();
+  }
+});
 
 // ── Render Pills ──
 function renderPills() {
@@ -957,7 +1056,17 @@ async function fetchRedditJson(path) {
       clearTimeout(timeout);
       if (res.ok) {
         const json = await res.json();
+        // Reddit sometimes returns 200 with error field for bad subs
+        if (json.error) throw new Error('Reddit error: ' + (json.message || json.error));
         return json;
+      }
+      // 404 - sub doesn't exist
+      if (res.status === 404) {
+        throw new Error('Subreddit not found (404). Check the name is correct.');
+      }
+      // 403 - private sub
+      if (res.status === 403) {
+        throw new Error('Subreddit is private (403). You need to be a member to view it.');
       }
       // 500/503 - try next base
       if (res.status >= 500) continue;
@@ -986,49 +1095,80 @@ async function fetchPosts(append) {
   renderPosts();
   try {
     const active = getActiveSubs();
-    if (active.length > 1 && !append) {
-      // Multiple subs: fetch in chunks and merge
-      const chunkSize = 5;
-      let allPosts = [];
-      for (let i = 0; i < active.length; i += chunkSize) {
-        const chunk = active.slice(i, i + chunkSize);
-        const target = 'r/' + chunk.join('+');
-        try {
-          const json = await fetchRedditJson(`/${target}/hot.json?limit=10&raw_json=1`);
-          allPosts = allPosts.concat(json.data?.children || []);
-        } catch(e) {
-          for (const sub of chunk) {
-            try {
-              const json = await fetchRedditJson(`/r/${sub}/hot.json?limit=8&raw_json=1`);
-              allPosts = allPosts.concat(json.data?.children || []);
-            } catch { /* skip failed sub */ }
-          }
-        }
-      }
-      allPosts.sort((a, b) => b.data.score - a.data.score);
-      const seen = new Set();
-      posts = allPosts.filter(p => {
-        if (seen.has(p.data.id)) return false;
-        seen.add(p.data.id);
-        return true;
-      }).slice(0, POSTS_PER_PAGE * 2);
-      afterToken = null;
-      loading = false;
-      renderPosts();
-    } else {
-      // Single sub or paginating
-      const target = 'r/' + active.join('+');
-      const path = `/${target}/hot.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after='+afterToken : ''}`;
-      const json = await fetchRedditJson(path);
-      const newPosts = json.data?.children || [];
-      if (append) { posts = posts.concat(newPosts); } else { posts = newPosts; }
-      afterToken = json.data?.after || null;
-      loading = false;
-      renderPosts();
-    }
+    const sort = currentSort;
+    // Always use the combined multi-reddit URL — Reddit handles the join fine for reasonable counts
+    const target = 'r/' + active.join('+');
+    const path = `/${target}/${sort}.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after=' + afterToken : ''}`;
+    const json = await fetchRedditJson(path);
+    const newPosts = json.data?.children || [];
+    if (append) { posts = posts.concat(newPosts); } else { posts = newPosts; }
+    afterToken = json.data?.after || null;
+    loading = false;
+    renderPosts();
   } catch(err) {
+    // Fallback: if combined URL fails for multi-sub, fetch individually
+    if (getActiveSubs().length > 1 && !append) {
+      try {
+        await fetchPostsChunked();
+        return;
+      } catch {}
+    }
     loading = false;
     renderError(err.message);
+  }
+}
+
+async function fetchPostsChunked() {
+  const active = getActiveSubs();
+  const sort = currentSort;
+  const chunkSize = 5;
+  let allPosts = [];
+  for (let i = 0; i < active.length; i += chunkSize) {
+    const chunk = active.slice(i, i + chunkSize);
+    const target = 'r/' + chunk.join('+');
+    try {
+      const json = await fetchRedditJson(`/${target}/${sort}.json?limit=10&raw_json=1`);
+      allPosts = allPosts.concat(json.data?.children || []);
+    } catch(e) {
+      for (const sub of chunk) {
+        try {
+          const json = await fetchRedditJson(`/r/${sub}/${sort}.json?limit=8&raw_json=1`);
+          allPosts = allPosts.concat(json.data?.children || []);
+        } catch { /* skip */ }
+      }
+    }
+  }
+  allPosts.sort((a, b) => b.data.score - a.data.score);
+  const seen = new Set();
+  posts = allPosts.filter(p => {
+    if (seen.has(p.data.id)) return false;
+    seen.add(p.data.id);
+    return true;
+  });
+  afterToken = null;
+  loading = false;
+  renderPosts();
+}
+
+function changeSort(sort) {
+  currentSort = sort;
+  window.scrollTo(0, 0);
+  fetchPosts();
+}
+
+function shareLink() {
+  const url = window.location.origin + window.location.pathname + subsToHash(subs);
+  if (navigator.share) {
+    navigator.share({ title: 'FocusRed', url: url }).catch(() => {});
+  } else {
+    navigator.clipboard.writeText(url).then(() => {
+      const btn = document.querySelector('.share-btn');
+      const orig = btn.textContent;
+      btn.textContent = '✓';
+      setTimeout(() => { btn.textContent = orig; }, 1500);
+    }).catch(() => {
+      prompt('Copy this link:', url);
+    });
   }
 }
 
@@ -1094,13 +1234,18 @@ function renderEditList() {
 }
 function addSub() {
   const input = document.getElementById('addInput');
-  const clean = input.value.trim().replace(/^r\//,'').replace(/\s+/g,'');
-  if (clean && !subs.find(s => s.toLowerCase() === clean.toLowerCase())) {
+  const clean = sanitizeSubName(input.value);
+  if (!clean) {
+    input.style.borderColor = 'var(--danger)';
+    setTimeout(() => { input.style.borderColor = ''; }, 1500);
+    return;
+  }
+  if (!subs.find(s => s.toLowerCase() === clean.toLowerCase())) {
     subs.push(clean);
     saveSubs();
     renderEditList();
-    input.value = '';
   }
+  input.value = '';
 }
 function removeSub(i) {
   const removed = subs[i];
@@ -1127,28 +1272,35 @@ function doImport(replaceAll) {
   // Try parsing as Reddit JSON first
   try {
     const json = JSON.parse(raw);
-    // Reddit /subreddits/mine.json format
     const children = json.data?.children || json.children || [];
     if (children.length > 0) {
       imported = children
         .map(c => c.data?.display_name || c.display_name)
         .filter(Boolean);
     }
-    // Maybe it's an array of strings
     if (imported.length === 0 && Array.isArray(json)) {
-      imported = json.map(s => typeof s === 'string' ? s.replace(/^r\//,'').trim() : '').filter(Boolean);
+      imported = json.map(s => typeof s === 'string' ? s.trim() : '').filter(Boolean);
     }
   } catch {
-    // Not JSON — treat as comma/newline/space separated list
     imported = raw
       .split(/[,\n\r]+/)
-      .map(s => s.trim().replace(/^r\//,'').replace(/\s+/g,''))
-      .filter(s => s.length > 0 && s.length < 80);
+      .map(s => s.trim())
+      .filter(s => s.length > 0);
   }
+
+  // Sanitize all names
+  const skipped = [];
+  imported = imported.map(name => {
+    const clean = sanitizeSubName(name);
+    if (!clean) skipped.push(name);
+    return clean;
+  }).filter(Boolean);
 
   if (imported.length === 0) {
     result.className = 'import-result error';
-    result.textContent = "Couldn't find any subreddit names in that. Try a comma-separated list like: sysadmin, PowerShell, homelab";
+    result.textContent = skipped.length > 0
+      ? `No valid subreddit names found. Invalid: ${skipped.slice(0,5).join(', ')}${skipped.length > 5 ? '…' : ''}`
+      : "Couldn't find any subreddit names. Try a comma-separated list like: sysadmin, PowerShell, homelab";
     return;
   }
 
@@ -1163,7 +1315,7 @@ function doImport(replaceAll) {
     selectedSubs.clear();
     renderEditList();
     result.className = 'import-result success';
-    result.textContent = `Replaced all. Now tracking ${subs.length} subreddit${subs.length !== 1 ? 's' : ''}.`;
+    result.textContent = `Replaced all. Now tracking ${subs.length} subreddit${subs.length !== 1 ? 's' : ''}.${skipped.length ? ' Skipped ' + skipped.length + ' invalid.' : ''}`;
   } else {
     let added = 0;
     imported.forEach(name => {
@@ -1175,7 +1327,7 @@ function doImport(replaceAll) {
     saveSubs();
     renderEditList();
     result.className = 'import-result success';
-    result.textContent = `Imported ${added} new subreddit${added !== 1 ? 's' : ''} (${imported.length - added} already existed). Total: ${subs.length}`;
+    result.textContent = `Imported ${added} new subreddit${added !== 1 ? 's' : ''} (${imported.length - added} already existed). Total: ${subs.length}${skipped.length ? '. Skipped ' + skipped.length + ' invalid.' : ''}`;
   }
 }
 
@@ -1208,7 +1360,7 @@ function openDetail(subreddit, postId, event) {
     html += `<img class="detail-image" src="${imgUrl}" alt="" onerror="this.style.display='none'">`;
   }
   if (isLink) {
-    html += `<a class="detail-link" href="${esc(d.url)}" target="_blank" rel="noopener">${esc(d.url)}</a>`;
+    html += d.url.match(/^https?:\/\//) ? `<a class="detail-link" href="${esc(d.url)}" target="_blank" rel="noopener noreferrer">${esc(d.url)}</a>` : '';
   }
   if (d.selftext) {
     html += `<div class="detail-selftext">${formatRedditText(d.selftext)}</div>`;
@@ -1329,10 +1481,12 @@ function formatRedditText(text) {
   s = s.replace(/\*(.+?)\*/g, '<em>$1</em>');
   // Inline code
   s = s.replace(/`(.+?)`/g, '<code style="background:var(--pill-bg);padding:1px 4px;border-radius:3px;font-size:12px;">$1</code>');
-  // Links [text](url)
-  s = s.replace(/\[([^\]]+)\]\(([^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener">$1</a>');
+  // Links [text](url) — only allow http/https
+  s = s.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" target="_blank" rel="noopener noreferrer">$1</a>');
+  // Strip any remaining markdown links with non-http schemes (javascript:, data:, etc.)
+  s = s.replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
   // Bare URLs
-  s = s.replace(/(^|[^"=])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener">$2</a>');
+  s = s.replace(/(^|[^"=])(https?:\/\/[^\s<]+)/g, '$1<a href="$2" target="_blank" rel="noopener noreferrer">$2</a>');
   // Blockquotes
   s = s.replace(/(^|<br>)&gt;\s?(.+?)(<br>|$)/g, '$1<blockquote>$2</blockquote>$3');
   // Strikethrough
