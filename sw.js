@@ -1,4 +1,4 @@
-const CACHE_NAME = 'focusred-v1.0';
+const CACHE_NAME = 'focusred-v1.1';
 const STATIC_ASSETS = [
   './',
   './index.html',

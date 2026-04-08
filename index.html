@@ -163,6 +163,16 @@
   }
   .sort-select:focus { border-color: var(--accent); }
   .sort-select option { background: var(--surface); color: var(--text); }
+  .time-select.hidden { display: none; }
+  .share-btn.has-bookmarks { position: relative; }
+  .share-btn.has-bookmarks::after {
+    content: '';
+    position: absolute;
+    top: 2px; right: 2px;
+    width: 6px; height: 6px;
+    background: var(--accent);
+    border-radius: 50%;
+  }
   .share-btn {
     font-size: 14px;
     background: var(--pill-bg);
@@ -174,6 +184,17 @@
     line-height: 1;
   }
   .share-btn:hover { border-color: var(--accent); }
+  .bookmark-btn {
+    margin-left: auto;
+    background: none;
+    border: none;
+    font-size: 16px;
+    cursor: pointer;
+    padding: 2px 4px;
+    opacity: 0.4;
+    transition: opacity 0.15s;
+  }
+  .bookmark-btn:hover, .bookmark-btn.bookmarked { opacity: 1; }
 
   /* ── Pill Nav ── */
   .pill-nav {
@@ -506,6 +527,23 @@
     font-weight: 700;
     color: var(--accent);
     margin-bottom: 4px;
+    cursor: pointer;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+  .comment-author:hover { text-decoration: underline; }
+  .comment-author .collapse-indicator {
+    font-size: 10px;
+    color: var(--text-faint);
+    margin-right: 4px;
+  }
+  .comment.collapsed .comment-body,
+  .comment.collapsed .comment-replies {
+    display: none;
+  }
+  .comment.collapsed {
+    opacity: 0.6;
+    border-left-color: var(--text-faint);
   }
   .comment-author.op { color: var(--upvote); }
   .comment-score {
@@ -790,6 +828,14 @@
           <option value="top">Top</option>
           <option value="rising">Rising</option>
         </select>
+        <select class="sort-select time-select hidden" id="timeSelect" onchange="changeTime(this.value)">
+          <option value="day">Today</option>
+          <option value="week">This week</option>
+          <option value="month">This month</option>
+          <option value="year">This year</option>
+          <option value="all">All time</option>
+        </select>
+        <button class="share-btn" onclick="toggleBookmarks()" title="Saved posts" id="bookmarkBtn">🔖</button>
         <button class="share-btn" onclick="shareLink()" title="Copy share link">📋</button>
         <button class="edit-btn" onclick="openEdit()">Edit subs</button>
       </div>
@@ -870,6 +916,10 @@ const DEFAULT_SUBS = ['claudeai','selfhosted'];
 let subs = [];
 let selectedSubs = new Set(); // empty = all
 let currentSort = 'hot';
+let currentTime = 'day';
+let showingBookmarks = false;
+let bookmarks = [];
+const BOOKMARKS_KEY = 'focusred_bookmarks';
 let posts = [];
 let afterToken = null;
 let loading = false;
@@ -1000,6 +1050,7 @@ function renderPills() {
 
 // ── Render Posts ──
 function renderPosts() {
+  if (showingBookmarks) { renderBookmarksView(); return; }
   const el = document.getElementById('content');
   if (subs.length === 0) {
     el.innerHTML = '<div class="empty-state"><div class="big">📭</div><p>No subreddits added yet.</p><p>Tap "Edit subs" to add your favourites.</p></div>';
@@ -1030,6 +1081,7 @@ function renderPosts() {
         <span class="stat up"><span class="icon">▲</span> ${kFmt(d.ups)}</span>
         <span class="stat cmt"><span class="icon">💬</span> ${d.num_comments}</span>
         ${linkDomain ? `<span class="post-link-domain">${esc(linkDomain)}</span>` : ''}
+        <button class="bookmark-btn ${isBookmarked(d.id)?'bookmarked':''}" onclick="toggleBookmarkPost('${esc(d.id)}', event)" title="${isBookmarked(d.id)?'Remove bookmark':'Bookmark post'}">${isBookmarked(d.id)?'🔖':'☆'}</button>
       </div>
     </div>`;
   });
@@ -1110,6 +1162,8 @@ async function fetchRedditJson(path) {
 }
 
 async function fetchPosts(append) {
+  showingBookmarks = false;
+  document.getElementById('bookmarkBtn').style.background = '';
   if (subs.length === 0) { renderPosts(); return; }
   loading = true;
   if (!append) { posts = []; afterToken = null; }
@@ -1117,9 +1171,10 @@ async function fetchPosts(append) {
   try {
     const active = getActiveSubs();
     const sort = currentSort;
+    const timeParam = sort === 'top' ? `&t=${currentTime}` : '';
     // Always use the combined multi-reddit URL — Reddit handles the join fine for reasonable counts
     const target = 'r/' + active.join('+');
-    const path = `/${target}/${sort}.json?limit=${POSTS_PER_PAGE}&raw_json=1${afterToken ? '&after=' + afterToken : ''}`;
+    const path = `/${target}/${sort}.json?limit=${POSTS_PER_PAGE}&raw_json=1${timeParam}${afterToken ? '&after=' + afterToken : ''}`;
     const json = await fetchRedditJson(path);
     const newPosts = json.data?.children || [];
     if (append) { posts = posts.concat(newPosts); } else { posts = newPosts; }
@@ -1142,18 +1197,19 @@ async function fetchPosts(append) {
 async function fetchPostsChunked() {
   const active = getActiveSubs();
   const sort = currentSort;
+  const timeParam = sort === 'top' ? `&t=${currentTime}` : '';
   const chunkSize = 5;
   let allPosts = [];
   for (let i = 0; i < active.length; i += chunkSize) {
     const chunk = active.slice(i, i + chunkSize);
     const target = 'r/' + chunk.join('+');
     try {
-      const json = await fetchRedditJson(`/${target}/${sort}.json?limit=10&raw_json=1`);
+      const json = await fetchRedditJson(`/${target}/${sort}.json?limit=10&raw_json=1${timeParam}`);
       allPosts = allPosts.concat(json.data?.children || []);
     } catch(e) {
       for (const sub of chunk) {
         try {
-          const json = await fetchRedditJson(`/r/${sub}/${sort}.json?limit=8&raw_json=1`);
+          const json = await fetchRedditJson(`/r/${sub}/${sort}.json?limit=8&raw_json=1${timeParam}`);
           allPosts = allPosts.concat(json.data?.children || []);
         } catch { /* skip */ }
       }
@@ -1173,6 +1229,21 @@ async function fetchPostsChunked() {
 
 function changeSort(sort) {
   currentSort = sort;
+  showingBookmarks = false;
+  document.getElementById('bookmarkBtn').style.opacity = '';
+  // Show/hide time period selector
+  const timeSel = document.getElementById('timeSelect');
+  if (sort === 'top') {
+    timeSel.classList.remove('hidden');
+  } else {
+    timeSel.classList.add('hidden');
+  }
+  window.scrollTo(0, 0);
+  fetchPosts();
+}
+
+function changeTime(t) {
+  currentTime = t;
   window.scrollTo(0, 0);
   fetchPosts();
 }
@@ -1392,6 +1463,7 @@ function openDetail(subreddit, postId, event) {
     <div class="detail-stats">
       <span class="stat up"><span class="icon">▲</span> ${kFmt(d.ups)}</span>
       <span class="stat cmt"><span class="icon">💬</span> ${d.num_comments} comments</span>
+      <button class="bookmark-btn ${isBookmarked(d.id)?'bookmarked':''}" id="detailBookmarkBtn" onclick="toggleBookmarkPost('${esc(d.id)}', event)" title="${isBookmarked(d.id)?'Remove bookmark':'Bookmark post'}">${isBookmarked(d.id)?'🔖':'☆'}</button>
     </div>
     <div class="comments-section" id="commentsSection">
       <div class="comments-loading"><div class="spinner"></div>Loading comments…</div>
@@ -1473,22 +1545,31 @@ function renderCommentTree(comments, postAuthor, depth) {
     const d = c.data;
     const isOp = d.author === postAuthor;
     const score = d.score != null ? d.score : '';
+    const cid = 'cmt_' + d.id;
 
-    html += `<div class="comment">
-      <div class="comment-author ${isOp ? 'op' : ''}">
+    html += `<div class="comment" id="${cid}">
+      <div class="comment-author ${isOp ? 'op' : ''}" onclick="toggleComment('${cid}')">
+        <span class="collapse-indicator" id="${cid}_ind">▼</span>
         ${esc(d.author)}${isOp ? ' <span style="font-size:10px;opacity:0.7">(OP)</span>' : ''}
         <span class="comment-score"> · ▲ ${kFmt(score)} · ${timeAgo(d.created_utc)}</span>
       </div>
       <div class="comment-body">${formatRedditText(d.body || '')}</div>`;
 
-    // Render replies
     const replies = d.replies?.data?.children;
     if (replies && replies.length > 0) {
-      html += renderCommentTree(replies, postAuthor, depth + 1);
+      html += `<div class="comment-replies">${renderCommentTree(replies, postAuthor, depth + 1)}</div>`;
     }
     html += '</div>';
   }
   return html;
+}
+
+function toggleComment(id) {
+  const el = document.getElementById(id);
+  const ind = document.getElementById(id + '_ind');
+  if (!el) return;
+  el.classList.toggle('collapsed');
+  if (ind) ind.textContent = el.classList.contains('collapsed') ? '▶' : '▼';
 }
 
 function formatRedditText(text) {
@@ -1534,8 +1615,138 @@ renderPills = function() {
 
 window.addEventListener('resize', adjustContentOffset);
 
+// ── Bookmarks ──
+function loadBookmarks() {
+  try {
+    const s = localStorage.getItem(BOOKMARKS_KEY);
+    bookmarks = s ? JSON.parse(s) : [];
+    if (!Array.isArray(bookmarks)) bookmarks = [];
+  } catch { bookmarks = []; }
+  updateBookmarkBtn();
+}
+function saveBookmarks() {
+  try { localStorage.setItem(BOOKMARKS_KEY, JSON.stringify(bookmarks)); } catch {}
+  updateBookmarkBtn();
+}
+function updateBookmarkBtn() {
+  const btn = document.getElementById('bookmarkBtn');
+  if (btn) {
+    btn.classList.toggle('has-bookmarks', bookmarks.length > 0);
+    btn.title = showingBookmarks ? 'Back to feed' : `Saved posts (${bookmarks.length})`;
+  }
+}
+function isBookmarked(postId) {
+  return bookmarks.some(b => b.id === postId);
+}
+function toggleBookmarkPost(postId, event) {
+  if (event) event.stopPropagation();
+  if (isBookmarked(postId)) {
+    bookmarks = bookmarks.filter(b => b.id !== postId);
+  } else {
+    // Find the post data
+    const post = posts.find(p => p.data.id === postId);
+    if (post) {
+      bookmarks.unshift({
+        id: post.data.id,
+        title: post.data.title,
+        subreddit: post.data.subreddit,
+        author: post.data.author,
+        permalink: post.data.permalink,
+        score: post.data.score,
+        num_comments: post.data.num_comments,
+        created_utc: post.data.created_utc,
+        thumbnail: post.data.thumbnail,
+        url: post.data.url,
+        is_self: post.data.is_self,
+        selftext: (post.data.selftext || '').slice(0, 300),
+        saved_at: Date.now()
+      });
+    }
+  }
+  saveBookmarks();
+  renderPosts();
+  // Update detail panel bookmark button if open
+  const detailBmBtn = document.getElementById('detailBookmarkBtn');
+  if (detailBmBtn) {
+    detailBmBtn.textContent = isBookmarked(postId) ? '🔖' : '☆';
+    detailBmBtn.title = isBookmarked(postId) ? 'Remove bookmark' : 'Bookmark post';
+  }
+}
+function toggleBookmarks() {
+  showingBookmarks = !showingBookmarks;
+  const btn = document.getElementById('bookmarkBtn');
+  btn.style.opacity = showingBookmarks ? '1' : '';
+  btn.style.background = showingBookmarks ? 'var(--accent)' : '';
+  if (showingBookmarks) {
+    renderBookmarksView();
+  } else {
+    renderPosts();
+  }
+}
+function renderBookmarksView() {
+  const el = document.getElementById('content');
+  if (bookmarks.length === 0) {
+    el.innerHTML = '<div class="empty-state"><div class="big">🔖</div><p>No saved posts yet.</p><p>Tap the bookmark icon on any post to save it.</p></div>';
+    return;
+  }
+  let cards = '';
+  bookmarks.forEach(b => {
+    const permalink = 'https://www.reddit.com' + b.permalink;
+    cards += `<div class="post-card" onclick="openBookmarkDetail('${esc(b.id)}')">
+      <div class="post-meta">
+        <span class="post-sub">r/${esc(b.subreddit)}</span>
+        <span>·</span>
+        <span>u/${esc(b.author)}</span>
+        <span>·</span>
+        <span>${timeAgo(b.created_utc)}</span>
+      </div>
+      <div class="post-title">${esc(b.title)}</div>
+      ${b.selftext ? `<div class="selftext">${esc(b.selftext)}</div>` : ''}
+      <div class="post-footer">
+        <span class="stat up"><span class="icon">▲</span> ${kFmt(b.score)}</span>
+        <span class="stat cmt"><span class="icon">💬</span> ${b.num_comments}</span>
+        <button class="bookmark-btn bookmarked" onclick="toggleBookmarkPost('${esc(b.id)}', event)" title="Remove bookmark">🔖</button>
+      </div>
+    </div>`;
+  });
+  el.innerHTML = `<div class="posts-grid">${cards}</div>`;
+}
+function openBookmarkDetail(postId) {
+  // For bookmarks, open the reddit permalink in detail panel by fetching the post
+  const bm = bookmarks.find(b => b.id === postId);
+  if (!bm) return;
+  const permalink = bm.permalink;
+  document.getElementById('detailRedditLink').href = 'https://www.reddit.com' + permalink;
+  document.getElementById('detailOverlay').classList.remove('hidden');
+  document.getElementById('detailPanel').classList.remove('hidden');
+  document.body.style.overflow = 'hidden';
+
+  let html = `
+    <div class="detail-sub">r/${esc(bm.subreddit)}</div>
+    <div class="detail-author">u/${esc(bm.author)} · ${timeAgo(bm.created_utc)}</div>
+    <div class="detail-title">${esc(bm.title)}</div>
+  `;
+  if (bm.selftext) {
+    html += `<div class="detail-selftext">${formatRedditText(bm.selftext)}</div>`;
+  }
+  html += `
+    <div class="detail-stats">
+      <span class="stat up"><span class="icon">▲</span> ${kFmt(bm.score)}</span>
+      <span class="stat cmt"><span class="icon">💬</span> ${bm.num_comments} comments</span>
+      <button class="bookmark-btn ${isBookmarked(postId)?'bookmarked':''}" id="detailBookmarkBtn" onclick="toggleBookmarkPost('${esc(postId)}', event)" title="${isBookmarked(postId)?'Remove bookmark':'Bookmark post'}">${isBookmarked(postId)?'🔖':'☆'}</button>
+    </div>
+    <div class="comments-section" id="commentsSection">
+      <div class="comments-loading"><div class="spinner"></div>Loading comments…</div>
+    </div>
+  `;
+  document.getElementById('detailBody').innerHTML = html;
+  document.getElementById('detailPanel').scrollTop = 0;
+  fetchComments(permalink);
+}
+
 // ── Init ──
 loadSubs();
+loadBookmarks();
 renderPills();
 fetchPosts();
 adjustContentOffset();
