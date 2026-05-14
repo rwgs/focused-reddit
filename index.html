@@ -1103,7 +1103,7 @@ function renderError(msg) {
     <button onclick="fetchPosts()">Retry</button>
     <p style="margin-top:16px;font-size:11px;color:var(--text-faint)">
       Debug: try opening <a href="https://www.reddit.com/r/all/hot.json?limit=1" target="_blank" style="color:var(--accent)">this link</a> directly.
-      If it doesn't load, an extension (ad blocker, privacy tool) may be blocking Reddit requests.
+      If it loads but the app still fails, an extension (ad blocker, privacy tool) is blocking fetch requests to Reddit — try whitelisting this site or disabling it for this page.
     </p>
   </div>`;
 }
@@ -1123,7 +1123,7 @@ async function fetchRedditJson(path) {
       const controller = new AbortController();
       const timeout = setTimeout(() => controller.abort(), 8000);
       const res = await fetch(url, {
-        headers: { Accept: 'application/json' },
+        credentials: 'omit',
         signal: controller.signal
       });
       clearTimeout(timeout);
@@ -1146,7 +1146,7 @@ async function fetchRedditJson(path) {
       // 429 rate limit - wait and retry same base
       if (res.status === 429) {
         await new Promise(r => setTimeout(r, 2000));
-        const retry = await fetch(url, { headers: { Accept: 'application/json' } });
+        const retry = await fetch(url, { credentials: 'omit' });
         if (retry.ok) return await retry.json();
         continue;
       }
