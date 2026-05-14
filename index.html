@@ -1116,7 +1116,7 @@ const REDDIT_BASES = [
 ];
 
 async function fetchRedditJson(path) {
-  // Try each Reddit endpoint until one works
+  const errors = [];
   for (const base of REDDIT_BASES) {
     try {
       const url = base + path;
@@ -1129,36 +1129,27 @@ async function fetchRedditJson(path) {
       clearTimeout(timeout);
       if (res.ok) {
         const json = await res.json();
-        // Reddit sometimes returns 200 with error field for bad subs
         if (json.error) throw new Error('Reddit error: ' + (json.message || json.error));
         return json;
       }
-      // 404 - sub doesn't exist
-      if (res.status === 404) {
-        throw new Error('Subreddit not found (404). Check the name is correct.');
-      }
-      // 403 - private sub
-      if (res.status === 403) {
-        throw new Error('Subreddit is private (403). You need to be a member to view it.');
-      }
-      // 500/503 - try next base
-      if (res.status >= 500) continue;
-      // 429 rate limit - wait and retry same base
+      if (res.status === 404) throw new Error('Subreddit not found (404). Check the name is correct.');
+      if (res.status === 403) throw new Error('Subreddit is private (403). You need to be a member to view it.');
+      if (res.status >= 500) { errors.push(base + ': HTTP ' + res.status); continue; }
       if (res.status === 429) {
         await new Promise(r => setTimeout(r, 2000));
         const retry = await fetch(url, { credentials: 'omit' });
         if (retry.ok) return await retry.json();
-        continue;
+        errors.push(base + ': rate limited'); continue;
       }
-      // Other error
       throw new Error('Reddit returned ' + res.status);
     } catch(err) {
-      if (err.message && err.message.includes('Reddit returned')) throw err;
-      // Network error or timeout - try next base
+      if (err.message && (err.message.includes('Reddit returned') || err.message.includes('not found') || err.message.includes('private') || err.message.includes('Reddit error'))) throw err;
+      errors.push(base + ': ' + err.message);
       continue;
     }
   }
-  throw new Error('All Reddit endpoints failed. Check your network or try refreshing.');
+  console.error('[FocusRed] All Reddit endpoints failed:', errors);
+  throw new Error('All Reddit endpoints failed: ' + errors.join(' | '));
 }
 
 async function fetchPosts(append) {
