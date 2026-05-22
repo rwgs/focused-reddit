@@ -1,4 +1,4 @@
-const CACHE_NAME = 'focusred-v1.1';
+const CACHE_NAME = 'focusred-v1.2';
 const STATIC_ASSETS = [
   './',
   './index.html',
@@ -25,8 +25,8 @@ self.addEventListener('activate', event => {
 self.addEventListener('fetch', event => {
   const url = new URL(event.request.url);
 
-  // Reddit API: always network
-  if (url.hostname.includes('reddit.com')) {
+  // Reddit API & CORS proxy: always network
+  if (url.hostname.includes('reddit.com') || url.hostname.includes('corsproxy.io')) {
     event.respondWith(fetch(event.request));
     return;
   }

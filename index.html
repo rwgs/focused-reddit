@@ -1114,8 +1114,29 @@ const REDDIT_BASES = [
   'https://old.reddit.com',
   'https://api.reddit.com'
 ];
+const CORS_PROXY = 'https://corsproxy.io/?url=';
+let useProxy = false;
+
+async function fetchViaProxy(path) {
+  const target = 'https://www.reddit.com' + path;
+  const url = CORS_PROXY + encodeURIComponent(target);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 10000);
+  const res = await fetch(url, { credentials: 'omit', signal: controller.signal });
+  clearTimeout(timeout);
+  if (!res.ok) {
+    if (res.status === 404) throw new Error('Subreddit not found (404). Check the name is correct.');
+    if (res.status === 403) throw new Error('Subreddit is private (403). You need to be a member to view it.');
+    throw new Error('Proxy returned ' + res.status);
+  }
+  const json = await res.json();
+  if (json.error) throw new Error('Reddit error: ' + (json.message || json.error));
+  return json;
+}
 
 async function fetchRedditJson(path) {
+  if (useProxy) return fetchViaProxy(path);
+
   const errors = [];
   for (const base of REDDIT_BASES) {
     try {
@@ -1148,8 +1169,10 @@ async function fetchRedditJson(path) {
       continue;
     }
   }
-  console.error('[FocusRed] All Reddit endpoints failed:', errors);
-  throw new Error('All Reddit endpoints failed: ' + errors.join(' | '));
+
+  console.warn('[FocusRed] Direct Reddit fetch failed, switching to CORS proxy. Errors:', errors);
+  useProxy = true;
+  return fetchViaProxy(path);
 }
 
 async function fetchPosts(append) {

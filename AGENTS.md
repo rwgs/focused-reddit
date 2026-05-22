@@ -134,13 +134,15 @@ Key functions: `buildHash()`, `parseHash()`, `loadSubs()`, `saveSubs()`, `update
 2. `https://old.reddit.com`
 3. `https://api.reddit.com`
 
+**CORS proxy fallback:** Reddit blocks unauthenticated cross-origin fetch from arbitrary domains via CORS. If all three direct bases fail, the code switches to `https://corsproxy.io/?url=...` (controlled by `useProxy` module-level flag) for the rest of the session. The proxy wraps `www.reddit.com`.
+
 **Error handling in `fetchRedditJson()`:**
-- 8-second `AbortController` timeout per request
+- 8-second `AbortController` timeout per direct request (10s via proxy)
 - 404 → user-friendly "subreddit not found" message
 - 403 → "subreddit is private" message
 - 429 → 2-second delay + one retry on same base
 - 5xx → try next base URL
-- Network/timeout → try next base URL
+- Network/timeout/CORS → try next base, then fall through to proxy
 
 **Fallback fetch strategy:** If combined multi-subreddit URL fails, `fetchPostsChunked()` fetches in groups of 5, then individually per sub if those also fail.
 
@@ -148,10 +150,10 @@ Key functions: `buildHash()`, `parseHash()`, `loadSubs()`, `saveSubs()`, `update
 
 ## Service Worker (`sw.js`)
 
-**Cache name:** `focusred-v1.1` — increment this when deploying breaking changes to force cache invalidation.
+**Cache name:** `focusred-v1.2` — increment this when deploying breaking changes to force cache invalidation.
 
 **Caching strategy:**
-- Reddit API requests (`*.reddit.com`): **always network** (never cached)
+- Reddit API requests (`*.reddit.com`) and CORS proxy (`corsproxy.io`): **always network** (never cached)
 - Everything else (app shell, fonts): **cache-first**, then network + cache on miss
 
 To update the service worker cache, change `CACHE_NAME` in `sw.js`.
